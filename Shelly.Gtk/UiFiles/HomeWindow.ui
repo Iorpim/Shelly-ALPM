@@ -148,6 +148,7 @@
                     </child>
                     <child>
                       <object class="GtkLabel" id="StandardPercent">
+                        <property name="justify">center</property>
                         <property name="label">Calculating</property>
                       </object>
                     </child>
@@ -179,6 +180,7 @@
                     </child>
                     <child>
                       <object class="GtkLabel" id="FlatpakPercent">
+                        <property name="justify">center</property>
                         <property name="label">Calculating</property>
                       </object>
                     </child>
