@@ -3,9 +3,11 @@
 ![Shelly Wiki](https://img.shields.io/badge/Shelly-Wiki-blue)
 
 <p align="center">
-  <img src="demo_part1.gif" width="32%">
-  <img src="demo_part2.gif" width="32%">
-  <img src="demo_part3.gif" width="32%">
+  Search Standard Packages, AUR, and Flatpak in one place
+  
+  <img width="1751" height="1168" alt="image" src="https://github.com/user-attachments/assets/282d4d87-d5b9-4418-83fb-289ba795b95b" />
+  <img width="1768" height="1177" alt="image" src="https://github.com/user-attachments/assets/8e9d851b-a3a0-4aaf-b91a-b3b3c3ec7f6d" />
+  <img width="1768" height="1177" alt="image" src="https://github.com/user-attachments/assets/cc2a8d31-e5c9-42d4-ba87-db25e10a1110" />
 </p>
 
 ### About
@@ -54,8 +56,7 @@ curl -fsSL https://raw.githubusercontent.com/ZoeyErinBauer/Shelly-ALPM/master/un
 
 - **Modern-CLI**: Provides a command-line interface for advanced users and automation, with a focus on ease of use.
 - **Native Arch Integration**: Directly interacts with `libalpm` for accurate and fast package management.
-- **Modern UI Framework**: Built using [Avalonia UI](https://avaloniaui.net/), ensuring a modern and responsive
-  user interface.
+- **Native Wayland Support**: Front end built using GTK4.
 - **Package Management**: Supports searching for, installing, updating, and removing packages.
 - **Repository Management**: Synchronizes with official repositories to keep package lists up to date.
 - **AUR Support**: Integration with the Arch User Repository for a wider range of software.
