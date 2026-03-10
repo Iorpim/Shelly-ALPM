@@ -130,12 +130,12 @@ public class PackageInstall(
 
         void AddDetail(string label, string value)
         {
-            var row = Box.New(Orientation.Horizontal, 8);
+            var row = Box.New(Orientation.Horizontal, 4);
             var labelWidget = Label.New(label + ":");
             labelWidget.AddCssClass("dim-label");
             labelWidget.Halign = Align.Start;
             labelWidget.Valign = Align.Start;
-            labelWidget.WidthRequest = 120;
+            labelWidget.WidthRequest = 90;
 
             var valueWidget = Label.New(value);
             valueWidget.Halign = Align.Start;
