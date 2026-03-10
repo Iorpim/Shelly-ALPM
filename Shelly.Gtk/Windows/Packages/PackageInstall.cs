@@ -118,6 +118,8 @@ public class PackageInstall(
 
     private void ShowPackageDetails(AlpmPackageGObject pkgObj)
     {
+        _detailBox.WidthRequest = 55;
+        
         if (pkgObj.Package == null) return;
 
         _currentDetailPkg = pkgObj;
@@ -135,12 +137,14 @@ public class PackageInstall(
             labelWidget.AddCssClass("dim-label");
             labelWidget.Halign = Align.Start;
             labelWidget.Valign = Align.Start;
-            labelWidget.WidthRequest = 90;
+            labelWidget.WidthRequest = 55;
 
             var valueWidget = Label.New(value);
             valueWidget.Halign = Align.Start;
             valueWidget.Wrap = true;
-            valueWidget.Hexpand = true;
+            valueWidget.WrapMode = Pango.WrapMode.WordChar;
+            valueWidget.Hexpand = false;
+            valueWidget.MaxWidthChars = 20;
             valueWidget.Xalign = 0;
 
             row.Append(labelWidget);
