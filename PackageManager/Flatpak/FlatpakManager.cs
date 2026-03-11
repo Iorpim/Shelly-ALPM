@@ -626,6 +626,394 @@ public class FlatpakManager : IDisposable
     }
 
     /// <summary>
+    /// Lists all configured remotes from both system and user installations.
+    /// </summary>
+    /// <returns>List of remote names in priority order</returns>
+    public List<string> ListRemotes()
+    {
+        var remotes = new List<string>();
+
+        if (!NativeResolver.IsLibraryAvailable(FlatpakReference.LibName))
+        {
+            return remotes;
+        }
+
+        // Get system installation remotes
+        var installationsPtr = FlatpakReference.GetSystemInstallations(IntPtr.Zero, out IntPtr error);
+        if (error == IntPtr.Zero && installationsPtr != IntPtr.Zero)
+        {
+            try
+            {
+                var dataPtr = Marshal.ReadIntPtr(installationsPtr);
+                var length = Marshal.ReadInt32(installationsPtr + IntPtr.Size);
+
+                for (var i = 0; i < length; i++)
+                {
+                    var installationPtr = Marshal.ReadIntPtr(dataPtr + i * IntPtr.Size);
+                    if (installationPtr != IntPtr.Zero)
+                    {
+                        AddRemotesFromInstallation(installationPtr, remotes);
+                    }
+                }
+            }
+            finally
+            {
+                FlatpakReference.GPtrArrayUnref(installationsPtr);
+            }
+        }
+
+        // Get user installation remotes
+        var userInstallationPtr = FlatpakReference.InstallationNewUser(IntPtr.Zero, out IntPtr userError);
+        if (userError != IntPtr.Zero)
+        {
+            FlatpakReference.GErrorFree(userError);
+        }
+        else if (userInstallationPtr != IntPtr.Zero)
+        {
+            try
+            {
+                AddRemotesFromInstallation(userInstallationPtr, remotes);
+            }
+            finally
+            {
+                FlatpakReference.GObjectUnref(userInstallationPtr);
+            }
+        }
+
+        return remotes;
+    }
+
+    /// <summary>
+    /// Helper method to add remotes from an installation to the list
+    /// </summary>
+    private void AddRemotesFromInstallation(IntPtr installationPtr, List<string> remotes)
+    {
+        IntPtr remotesPtr = FlatpakReference.InstallationListRemotes(
+            installationPtr, IntPtr.Zero, out IntPtr error);
+
+        if (error != IntPtr.Zero || remotesPtr == IntPtr.Zero)
+        {
+            FlatpakReference.GErrorFree(error);
+            return;
+        }
+
+        try
+        {
+            var remotesDataPtr = Marshal.ReadIntPtr(remotesPtr);
+            var remotesLength = Marshal.ReadInt32(remotesPtr + IntPtr.Size);
+
+            for (var i = 0; i < remotesLength; i++)
+            {
+                IntPtr remotePtr = Marshal.ReadIntPtr(remotesDataPtr + i * IntPtr.Size);
+                if (remotePtr != IntPtr.Zero)
+                {
+                    var remoteName = PtrToStringSafe(FlatpakReference.RemoteGetName(remotePtr));
+                    if (!string.IsNullOrEmpty(remoteName) && !remotes.Contains(remoteName))
+                    {
+                        remotes.Add(remoteName);
+                    }
+                }
+            }
+        }
+        finally
+        {
+            FlatpakReference.GPtrArrayUnref(remotesPtr);
+        }
+    }
+
+    /// <summary>
+    /// Adds a remote repository to an installation.
+    /// </summary>
+    /// <param name="remoteName">The name for the remote (e.g., "flathub")</param>
+    /// <param name="remoteUrl">The URL for the remote repository</param>
+    /// <param name="isSystemWide">Whether to add to system installation (true) or user installation (false)</param>
+    /// <param name="gpgVerify">Whether to verify GPG signatures (default: true)</param>
+    /// <returns>A result message indicating success or failure</returns>
+    public string AddRemote(string remoteName, string remoteUrl, bool isSystemWide = false, bool gpgVerify = true)
+    {
+        if (!NativeResolver.IsLibraryAvailable(FlatpakReference.LibName))
+        {
+            return "Flatpak library is not available.";
+        }
+
+        IntPtr installationPtr;
+        IntPtr installationsPtr = IntPtr.Zero;
+
+        if (isSystemWide)
+        {
+            installationsPtr = FlatpakReference.GetSystemInstallations(IntPtr.Zero, out IntPtr sysError);
+            if (sysError != IntPtr.Zero || installationsPtr == IntPtr.Zero)
+            {
+                FlatpakReference.GErrorFree(sysError);
+                if (installationsPtr != IntPtr.Zero)
+                {
+                    FlatpakReference.GPtrArrayUnref(installationsPtr);
+                }
+                return "Failed to get system installation.";
+            }
+
+            var dataPtr = Marshal.ReadIntPtr(installationsPtr);
+            installationPtr = Marshal.ReadIntPtr(dataPtr);
+
+            if (installationPtr == IntPtr.Zero)
+            {
+                FlatpakReference.GPtrArrayUnref(installationsPtr);
+                return "System installation pointer is invalid.";
+            }
+        }
+        else
+        {
+            installationPtr = FlatpakReference.InstallationNewUser(IntPtr.Zero, out IntPtr userError);
+            if (userError != IntPtr.Zero || installationPtr == IntPtr.Zero)
+            {
+                FlatpakReference.GErrorFree(userError);
+                return "Failed to get user installation.";
+            }
+        }
+
+        try
+        {
+            var remotePtr = FlatpakReference.RemoteNew(remoteName);
+            if (remotePtr == IntPtr.Zero)
+            {
+                return "Failed to create remote object.";
+            }
+
+            try
+            {
+                FlatpakReference.RemoteSetUrl(remotePtr, remoteUrl);
+                FlatpakReference.RemoteSetGpgVerify(remotePtr, gpgVerify);
+
+                var success = FlatpakReference.InstallationAddRemote(
+                    installationPtr, remotePtr, true, IntPtr.Zero, out IntPtr error);
+
+                if (!success || error != IntPtr.Zero)
+                {
+                    var errorMsg = FlatpakReference.GetErrorMessage(error);
+                    FlatpakReference.GErrorFree(error);
+                    return $"Failed to add remote '{remoteName}': {errorMsg}";
+                }
+
+                var scope = isSystemWide ? "system" : "user";
+                return $"Successfully added remote '{remoteName}' to {scope} installation with URL: {remoteUrl}";
+            }
+            finally
+            {
+                FlatpakReference.GObjectUnref(remotePtr);
+            }
+        }
+        finally
+        {
+            if (isSystemWide)
+            {
+                if (installationsPtr != IntPtr.Zero)
+                {
+                    FlatpakReference.GPtrArrayUnref(installationsPtr);
+                }
+            }
+            else
+            {
+                FlatpakReference.GObjectUnref(installationPtr);
+            }
+        }
+    }
+
+    /// <summary>
+    /// Modifies a remote repository's settings.
+    /// </summary>
+    /// <param name="remoteName">The name of the remote to modify (e.g., "elementary")</param>
+    /// <param name="gpgVerify">Whether to verify GPG signatures</param>
+    /// <param name="isSystemWide">Whether to modify system installation (true) or user installation (false)</param>
+    /// <returns>A result message indicating success or failure</returns>
+    public string ModifyRemote(string remoteName, bool gpgVerify, bool isSystemWide = false)
+    {
+        if (!NativeResolver.IsLibraryAvailable(FlatpakReference.LibName))
+        {
+            return "Flatpak library is not available.";
+        }
+
+        IntPtr installationPtr;
+        IntPtr installationsPtr = IntPtr.Zero;
+
+        if (isSystemWide)
+        {
+            installationsPtr = FlatpakReference.GetSystemInstallations(IntPtr.Zero, out IntPtr sysError);
+            if (sysError != IntPtr.Zero || installationsPtr == IntPtr.Zero)
+            {
+                FlatpakReference.GErrorFree(sysError);
+                if (installationsPtr != IntPtr.Zero)
+                {
+                    FlatpakReference.GPtrArrayUnref(installationsPtr);
+                }
+                return "Failed to get system installation.";
+            }
+
+            var dataPtr = Marshal.ReadIntPtr(installationsPtr);
+            installationPtr = Marshal.ReadIntPtr(dataPtr);
+
+            if (installationPtr == IntPtr.Zero)
+            {
+                FlatpakReference.GPtrArrayUnref(installationsPtr);
+                return "System installation pointer is invalid.";
+            }
+        }
+        else
+        {
+            installationPtr = FlatpakReference.InstallationNewUser(IntPtr.Zero, out IntPtr userError);
+            if (userError != IntPtr.Zero || installationPtr == IntPtr.Zero)
+            {
+                FlatpakReference.GErrorFree(userError);
+                return "Failed to get user installation.";
+            }
+        }
+
+        try
+        {
+            // Get the existing remote
+            var remotesPtr = FlatpakReference.InstallationListRemotes(
+                installationPtr, IntPtr.Zero, out IntPtr remotesError);
+
+            if (remotesError != IntPtr.Zero || remotesPtr == IntPtr.Zero)
+            {
+                FlatpakReference.GErrorFree(remotesError);
+                return $"Failed to list remotes.";
+            }
+
+            try
+            {
+                var remotesDataPtr = Marshal.ReadIntPtr(remotesPtr);
+                var remotesLength = Marshal.ReadInt32(remotesPtr + IntPtr.Size);
+
+                IntPtr targetRemotePtr = IntPtr.Zero;
+                for (var i = 0; i < remotesLength; i++)
+                {
+                    var remotePtr = Marshal.ReadIntPtr(remotesDataPtr + i * IntPtr.Size);
+                    if (remotePtr == IntPtr.Zero) continue;
+
+                    var name = PtrToStringSafe(FlatpakReference.RemoteGetName(remotePtr));
+                    if (name == remoteName)
+                    {
+                        targetRemotePtr = remotePtr;
+                        break;
+                    }
+                }
+
+                if (targetRemotePtr == IntPtr.Zero)
+                {
+                    return $"Remote '{remoteName}' not found.";
+                }
+
+                // Modify the remote's GPG verification setting
+                FlatpakReference.RemoteSetGpgVerify(targetRemotePtr, gpgVerify);
+
+                var success = FlatpakReference.InstallationModifyRemote(
+                    installationPtr, targetRemotePtr, IntPtr.Zero, out IntPtr error);
+
+                if (!success || error != IntPtr.Zero)
+                {
+                    var errorMsg = FlatpakReference.GetErrorMessage(error);
+                    FlatpakReference.GErrorFree(error);
+                    return $"Failed to modify remote '{remoteName}': {errorMsg}";
+                }
+
+                var scope = isSystemWide ? "system" : "user";
+                var gpgStatus = gpgVerify ? "enabled" : "disabled";
+                return $"Successfully modified remote '{remoteName}' in {scope} installation. GPG verification: {gpgStatus}";
+            }
+            finally
+            {
+                FlatpakReference.GPtrArrayUnref(remotesPtr);
+            }
+        }
+        finally
+        {
+            if (installationsPtr != IntPtr.Zero)
+                {
+                    FlatpakReference.GPtrArrayUnref(installationsPtr);
+                }
+        }
+    }
+
+    /// <summary>
+    /// Removes a remote repository from an installation.
+    /// </summary>
+    /// <param name="remoteName">The name of the remote to remove (e.g., "flathub-beta")</param>
+    /// <param name="isSystemWide">Whether to remove from system installation (true) or user installation (false)</param>
+    /// <returns>A result message indicating success or failure</returns>
+    public string RemoveRemote(string remoteName, bool isSystemWide = false)
+    {
+        if (!NativeResolver.IsLibraryAvailable(FlatpakReference.LibName))
+        {
+            return "Flatpak library is not available.";
+        }
+
+        IntPtr installationPtr;
+        IntPtr installationsPtr = IntPtr.Zero;
+
+        if (isSystemWide)
+        {
+            installationsPtr = FlatpakReference.GetSystemInstallations(IntPtr.Zero, out IntPtr sysError);
+            if (sysError != IntPtr.Zero || installationsPtr == IntPtr.Zero)
+            {
+                FlatpakReference.GErrorFree(sysError);
+                if (installationsPtr != IntPtr.Zero)
+                {
+                    FlatpakReference.GPtrArrayUnref(installationsPtr);
+                }
+                return "Failed to get system installation.";
+            }
+
+            var dataPtr = Marshal.ReadIntPtr(installationsPtr);
+            installationPtr = Marshal.ReadIntPtr(dataPtr);
+
+            if (installationPtr == IntPtr.Zero)
+            {
+                FlatpakReference.GPtrArrayUnref(installationsPtr);
+                return "System installation pointer is invalid.";
+            }
+        }
+        else
+        {
+            installationPtr = FlatpakReference.InstallationNewUser(IntPtr.Zero, out IntPtr userError);
+            if (userError != IntPtr.Zero || installationPtr == IntPtr.Zero)
+            {
+                FlatpakReference.GErrorFree(userError);
+                return "Failed to get user installation.";
+            }
+        }
+
+        try
+        {
+            var success = FlatpakReference.InstallationRemoveRemote(
+                installationPtr, remoteName, IntPtr.Zero, out IntPtr error);
+
+            if (!success || error != IntPtr.Zero)
+            {
+                var errorMsg = FlatpakReference.GetErrorMessage(error);
+                FlatpakReference.GErrorFree(error);
+                return $"Failed to remove remote '{remoteName}': {errorMsg}";
+            }
+
+            var scope = isSystemWide ? "system" : "user";
+            return $"Successfully removed remote '{remoteName}' from {scope} installation.";
+        }
+        finally
+        {
+            if (isSystemWide)
+            {
+                if (installationsPtr != IntPtr.Zero)
+                {
+                    FlatpakReference.GPtrArrayUnref(installationsPtr);
+                }
+            }
+            else
+            {
+                FlatpakReference.GObjectUnref(installationPtr);
+            }
+        }
+    }
+
+    /// <summary>
     /// Retrieve flatpak that require updates
     /// <returns>List of FlatpakPackageDto</returns>
     /// </summary>
@@ -689,66 +1077,129 @@ public class FlatpakManager : IDisposable
     }
 
     /// <summary>
-    /// Updates the local appstream metadata for a remote repository.
+    /// Updates the local appstream metadata for all remotes in both system and user installations.
     /// </summary>
-    /// <param name="remoteName">The remote name (e.g., "flathub"). If null, updates all remotes.</param>
     /// <param name="arch">The architecture (e.g., "x86_64"). If null, uses current system architecture.</param>
     /// <returns>Tuple with success boolean and result message</returns>
-    public (bool success, string message) UpdateAppstream(string? remoteName = null, string? arch = null)
+    public (bool success, string message) UpdateAppstream(string? arch = null)
     {
-        var installationsPtr = FlatpakReference.GetSystemInstallations(IntPtr.Zero, out IntPtr error);
-
-        if (error != IntPtr.Zero || installationsPtr == IntPtr.Zero)
+        if (!NativeResolver.IsLibraryAvailable(FlatpakReference.LibName))
         {
-            return (false, "Failed to get system installations.");
+            return (false, "Flatpak library is not available.");
+        }
+
+        var targetArch = arch ?? GetCurrentArch();
+        var results = new List<string>();
+        var hasErrors = false;
+
+        // Update system installation remotes
+        var installationsPtr = FlatpakReference.GetSystemInstallations(IntPtr.Zero, out IntPtr error);
+        if (error == IntPtr.Zero && installationsPtr != IntPtr.Zero)
+        {
+            try
+            {
+                var dataPtr = Marshal.ReadIntPtr(installationsPtr);
+                var length = Marshal.ReadInt32(installationsPtr + IntPtr.Size);
+
+                for (var i = 0; i < length; i++)
+                {
+                    var installationPtr = Marshal.ReadIntPtr(dataPtr + i * IntPtr.Size);
+                    if (installationPtr != IntPtr.Zero)
+                    {
+                        UpdateAppstreamForInstallation(installationPtr, "system", targetArch, results, ref hasErrors);
+                    }
+                }
+            }
+            finally
+            {
+                FlatpakReference.GPtrArrayUnref(installationsPtr);
+            }
+        }
+
+        // Update user installation remotes
+        var userInstallationPtr = FlatpakReference.InstallationNewUser(IntPtr.Zero, out IntPtr userError);
+        if (userError == IntPtr.Zero && userInstallationPtr != IntPtr.Zero)
+        {
+            try
+            {
+                UpdateAppstreamForInstallation(userInstallationPtr, "user", targetArch, results, ref hasErrors);
+            }
+            finally
+            {
+                FlatpakReference.GObjectUnref(userInstallationPtr);
+            }
+        }
+
+        if (results.Count == 0)
+        {
+            return (false, "No remotes found to update.");
+        }
+
+        var message = string.Join("\n", results);
+        return (!hasErrors, message);
+    }
+
+    /// <summary>
+    /// Helper method to update appstream for all remotes in a specific installation.
+    /// </summary>
+    private void UpdateAppstreamForInstallation(IntPtr installationPtr, string scope, string arch,
+        List<string> results, ref bool hasErrors)
+    {
+        IntPtr remotesPtr = FlatpakReference.InstallationListRemotes(
+            installationPtr, IntPtr.Zero, out IntPtr error);
+
+        if (error != IntPtr.Zero || remotesPtr == IntPtr.Zero)
+        {
+            FlatpakReference.GErrorFree(error);
+            return;
         }
 
         try
         {
-            var dataPtr = Marshal.ReadIntPtr(installationsPtr);
-            int length = Marshal.ReadInt32(installationsPtr + IntPtr.Size);
+            var remotesDataPtr = Marshal.ReadIntPtr(remotesPtr);
+            var remotesLength = Marshal.ReadInt32(remotesPtr + IntPtr.Size);
 
-            if (length == 0)
+            for (var i = 0; i < remotesLength; i++)
             {
-                return (false, "No flatpak installations found.");
+                IntPtr remotePtr = Marshal.ReadIntPtr(remotesDataPtr + i * IntPtr.Size);
+                if (remotePtr == IntPtr.Zero) continue;
+
+                var remoteName = PtrToStringSafe(FlatpakReference.RemoteGetName(remotePtr));
+                if (string.IsNullOrEmpty(remoteName)) continue;
+
+                var success = FlatpakReference.InstallationUpdateAppstreamSync(
+                    installationPtr,
+                    remoteName,
+                    arch,
+                    out bool outChanged,
+                    IntPtr.Zero,
+                    out IntPtr updateError);
+
+                if (!success || updateError != IntPtr.Zero)
+                {
+                    var errorMsg = FlatpakReference.GetErrorMessage(updateError);
+                    FlatpakReference.GErrorFree(updateError);
+                    
+                    if (errorMsg.Contains("No such ref 'appstream") || errorMsg.Contains("not found"))
+                    {
+                        results.Add($"{remoteName} ({scope}): no appstream data available");
+                    }
+                    else
+                    {
+                        results.Add($"Failed to update {remoteName} ({scope}): {errorMsg}");
+                        hasErrors = true;
+                    }
+                }
+                else
+                {
+                    var status = outChanged ? "updated" : "already up to date";
+                    results.Add($"{remoteName} ({scope}): {status}");
+                }
             }
-
-            var installationPtr = Marshal.ReadIntPtr(dataPtr);
-            if (installationPtr == IntPtr.Zero)
-            {
-                return (false, "Installation pointer is invalid.");
-            }
-
-            var targetArch = arch ?? GetCurrentArch();
-            var remote = remoteName ?? GetFirstRemote(installationPtr);
-
-            if (string.IsNullOrEmpty(remote))
-            {
-                return (false, "No remote repository configured. Add a remote like 'flathub' first.");
-            }
-
-            var success = FlatpakReference.InstallationUpdateAppstreamSync(
-                installationPtr,
-                remote,
-                targetArch,
-                out bool outChanged,
-                IntPtr.Zero,
-                out IntPtr updateError);
-
-            if (!success || updateError != IntPtr.Zero)
-            {
-                var errorMsg = FlatpakReference.GetErrorMessage(updateError);
-                return (false, $"Failed to update appstream for {remote}: {errorMsg}");
-            }
-
-            var message = outChanged
-                ? $"Successfully updated appstream for {remote}. Metadata was changed."
-                : $"Appstream for {remote} is already up to date.";
-            return (true, message);
         }
         finally
         {
-            FlatpakReference.GPtrArrayUnref(installationsPtr);
+            FlatpakReference.GPtrArrayUnref(remotesPtr);
         }
     }
 
@@ -770,13 +1221,25 @@ public class FlatpakManager : IDisposable
                 return new List<AppstreamApp>();
             }
 
-            // Construct path to appstream file
+            // Try system installation first
             var appstreamPath = $"/var/lib/flatpak/appstream/{remote}/{targetArch}/active/appstream.xml";
 
             // Try .xml.gz if .xml doesn't exist
             if (!File.Exists(appstreamPath))
             {
                 appstreamPath = $"/var/lib/flatpak/appstream/{remote}/{targetArch}/active/appstream.xml.gz";
+            }
+
+           
+            if (!File.Exists(appstreamPath))
+            {
+                var userHome = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+                appstreamPath = Path.Combine(userHome, ".local/share/flatpak/appstream", remote, targetArch, "active/appstream.xml");
+
+                if (!File.Exists(appstreamPath))
+                {
+                    appstreamPath = Path.Combine(userHome, ".local/share/flatpak/appstream", remote, targetArch, "active/appstream.xml.gz");
+                }
             }
 
             if (!File.Exists(appstreamPath))
@@ -793,6 +1256,116 @@ public class FlatpakManager : IDisposable
         }
 
         return new List<AppstreamApp>();
+    }
+
+    /// <summary>
+    /// Gets all available apps from a remote by querying the remote directly (without appstream).
+    /// </summary>
+    /// <param name="remoteName">The remote name (e.g., "flathub-beta")</param>
+    /// <returns>List of available applications from the remote</returns>
+    public List<FlatpakPackageDto> GetAvailableAppsFromRemote(string remoteName)
+    {
+        var packages = new List<FlatpakPackageDto>();
+
+        if (!NativeResolver.IsLibraryAvailable(FlatpakReference.LibName))
+        {
+            return packages;
+        }
+
+        if (string.IsNullOrEmpty(remoteName))
+        {
+            return packages;
+        }
+
+        // Try system installation first
+        var installationsPtr = FlatpakReference.GetSystemInstallations(IntPtr.Zero, out IntPtr error);
+        if (error == IntPtr.Zero && installationsPtr != IntPtr.Zero)
+        {
+            try
+            {
+                var dataPtr = Marshal.ReadIntPtr(installationsPtr);
+                var length = Marshal.ReadInt32(installationsPtr + IntPtr.Size);
+
+                for (var i = 0; i < length; i++)
+                {
+                    var installationPtr = Marshal.ReadIntPtr(dataPtr + i * IntPtr.Size);
+                    if (installationPtr != IntPtr.Zero)
+                    {
+                        AddPackagesFromRemote(installationPtr, remoteName, packages);
+                    }
+                }
+            }
+            finally
+            {
+                FlatpakReference.GPtrArrayUnref(installationsPtr);
+            }
+        }
+
+   
+        if (packages.Count == 0)
+        {
+            var userInstallationPtr = FlatpakReference.InstallationNewUser(IntPtr.Zero, out IntPtr userError);
+            if (userError == IntPtr.Zero && userInstallationPtr != IntPtr.Zero)
+            {
+                try
+                {
+                    AddPackagesFromRemote(userInstallationPtr, remoteName, packages);
+                }
+                finally
+                {
+                    FlatpakReference.GObjectUnref(userInstallationPtr);
+                }
+            }
+            else
+            {
+                FlatpakReference.GErrorFree(userError);
+            }
+        }
+
+        return packages;
+    }
+
+    /// <summary>
+    /// Helper method to add packages from a remote to the list
+    /// </summary>
+    private void AddPackagesFromRemote(IntPtr installationPtr, string remoteName, List<FlatpakPackageDto> packages)
+    {
+        var refsPtr = FlatpakReference.InstallationListRemoteRefsSync(
+            installationPtr, remoteName, IntPtr.Zero, out IntPtr error);
+
+        if (error != IntPtr.Zero || refsPtr == IntPtr.Zero)
+        {
+            if (error != IntPtr.Zero)
+            {
+                var errorMsg = FlatpakReference.GetErrorMessage(error);
+                Console.Error.WriteLine($"Failed to list remote refs for '{remoteName}': {errorMsg}");
+                FlatpakReference.GErrorFree(error);
+            }
+            return;
+        }
+
+        try
+        {
+            var refsDataPtr = Marshal.ReadIntPtr(refsPtr);
+            var refsLength = Marshal.ReadInt32(refsPtr + IntPtr.Size);
+
+            for (var j = 0; j < refsLength; j++)
+            {
+                var refPtr = Marshal.ReadIntPtr(refsDataPtr + j * IntPtr.Size);
+                if (refPtr == IntPtr.Zero) continue;
+
+                // Check if it's an app (not a runtime)
+                var kind = FlatpakReference.RefGetKind(refPtr);
+                if (kind != FlatpakReference.FlatpakRefKindApp) continue;
+
+                var package = new FlatpackPackage(refPtr);
+                packages.Add(package.ToDto());
+            }
+        }
+        finally
+        {
+            FlatpakReference.GPtrArrayUnref(refsPtr);
+        }
     }
 
     /// <summary>
