@@ -454,7 +454,11 @@ public class FlatpakInstall(
 
         nameLabel.SetText(package.Name);
         idLabel.SetText(package.Summary);
-        versionLabel.SetText(package.Releases.First().Version);
+
+        if (package.Releases.Count != 0)
+        {
+            versionLabel.SetText(package.Releases.First().Version);
+        }
     }
 
     private async Task LoadDataAsync(CancellationToken ct = default)
