@@ -21,11 +21,25 @@ public static class GenericQuestionDialog
         titleLabel.AddCssClass("title-4");
         box.Append(titleLabel);
 
-        var messageLabel = Label.New(e.Message);
-        messageLabel.SetWrap(true);
+        var messageLabel = Label.New(string.Empty);
+        messageLabel.SetHalign(Align.Start);
+        messageLabel.SetXalign(0);
+        messageLabel.SetJustify(Justification.Left);
+        messageLabel.SetWrap(!e.UseMonospaceMessage);
+
+        if (e.UseMonospaceMessage)
+        {
+            messageLabel.SetMarkup($"<tt>{GLib.Markup.EscapeText(e.Message)}</tt>");
+        }
+        else
+        {
+            messageLabel.SetText(e.Message);
+        }
 
         var scrolledWindow = new ScrolledWindow();
-        scrolledWindow.SetPolicy(PolicyType.Never, PolicyType.Automatic);
+        scrolledWindow.SetPolicy(
+            e.UseMonospaceMessage ? PolicyType.Automatic : PolicyType.Never,
+            PolicyType.Automatic);
         scrolledWindow.SetMaxContentHeight(300);
         scrolledWindow.SetPropagateNaturalHeight(true);
         scrolledWindow.SetChild(messageLabel);
