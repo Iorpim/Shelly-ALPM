@@ -64,6 +64,7 @@ public class AurUpdate(
         _filterListModel = FilterListModel.New(_listStore, _filter);
         _selectionModel = SingleSelection.New(_filterListModel);
         _selectionModel.CanUnselect = true;
+        _columnView.SetModel(_selectionModel);
 
         SetupColumns(_checkColumn, _nameColumn, _versionColumn);
 
@@ -104,15 +105,15 @@ public class AurUpdate(
 
     private void SetupColumns(ColumnViewColumn checkColumn, ColumnViewColumn nameColumn, ColumnViewColumn versionColumn)
     {
-        var checkFactory = _checkFactory = SignalListItemFactory.New();
-        checkFactory.OnSetup += (_, args) =>
+        _checkFactory = SignalListItemFactory.New();
+        _checkFactory.OnSetup += (_, args) =>
         {
             if (args.Object is not ColumnViewCell listItem) return;
             var check = new CheckButton { MarginStart = 10, MarginEnd = 10 };
             listItem.SetChild(check);
         };
 
-        checkFactory.OnBind += (_, args) =>
+        _checkFactory.OnBind += (_, args) =>
         {
             if (args.Object is not ColumnViewCell listItem) return;
             if (listItem.GetItem() is not AurUpdateGObject pkgObj ||
@@ -141,7 +142,7 @@ public class AurUpdate(
             }
         };
 
-        checkFactory.OnUnbind += (_, args) =>
+        _checkFactory.OnUnbind += (_, args) =>
         {
             if (args.Object is not ColumnViewCell listItem) return;
             if (listItem.GetItem() is not AurUpdateGObject pkgObj ||
@@ -153,16 +154,16 @@ public class AurUpdate(
             }
         };
 
-        checkColumn.SetFactory(checkFactory);
+        checkColumn.SetFactory(_checkFactory);
 
-        var nameFactory = _nameFactory = SignalListItemFactory.New();
-        nameFactory.OnSetup += (_, args) =>
+        _nameFactory = SignalListItemFactory.New();
+        _nameFactory.OnSetup += (_, args) =>
         {
             if (args.Object is not ColumnViewCell listItem) return;
             var label = Label.New(string.Empty);
             listItem.SetChild(label);
         };
-        nameFactory.OnBind += (_, args) =>
+        _nameFactory.OnBind += (_, args) =>
         {
             if (args.Object is not ColumnViewCell listItem) return;
             if (listItem.GetItem() is not AurUpdateGObject { Package: { } pkg } ||
@@ -170,16 +171,16 @@ public class AurUpdate(
             label.SetText(pkg.Name);
             label.Halign = Align.Start;
         };
-        nameColumn.SetFactory(nameFactory);
+        nameColumn.SetFactory(_nameFactory);
 
-        var versionFactory = _versionFactory = SignalListItemFactory.New();
-        versionFactory.OnSetup += (_, args) =>
+        _versionFactory = SignalListItemFactory.New();
+        _versionFactory.OnSetup += (_, args) =>
         {
             if (args.Object is not ColumnViewCell listItem) return;
             var label = Label.New(string.Empty);
             listItem.SetChild(label);
         };
-        versionFactory.OnBind += (_, args) =>
+        _versionFactory.OnBind += (_, args) =>
         {
             if (args.Object is not ColumnViewCell listItem) return;
             if (listItem.GetItem() is not AurUpdateGObject { Package: { } pkg } ||
@@ -187,7 +188,7 @@ public class AurUpdate(
             label.SetText(pkg.Version);
             label.Halign = Align.End;
         };
-        versionColumn.SetFactory(versionFactory);
+        versionColumn.SetFactory(_versionFactory);
     }
 
     private async Task LoadDataAsync(CancellationToken ct = default)
@@ -197,7 +198,6 @@ public class AurUpdate(
             var packages = await privilegedOperationService.GetAurUpdatePackagesAsync();
             ct.ThrowIfCancellationRequested();
             Console.WriteLine($@"[DEBUG_LOG] {packages.Count} AUR packages for update.");
-
 
             GLib.Functions.IdleAdd(0, () =>
             {
@@ -214,7 +214,7 @@ public class AurUpdate(
                 }
 
                 _noPackagesLabel.Visible = packages.Count == 0;
-                
+
                 return false;
             });
         }
