@@ -544,8 +544,22 @@ public class PackageInstall(
             {
                 if (!configService.LoadConfig().NoConfirm)
                 {
+                    var message = string.Join("\n", selectedPackages);
+                    var performUpgradeForDialog = _upgradeCheck.GetActive();
+
+                    if (performUpgradeForDialog)
+                    {
+                        var updatesNeeded = await privilegedOperationService.GetPackagesNeedingUpdateAsync();
+                        if (updatesNeeded.Count > 0)
+                        {
+                            message += "\n\n--- Packages to Upgrade ---\n";
+                            message += string.Join("\n",
+                                updatesNeeded.Select(u => $"{u.Name}: {u.CurrentVersion} -> {u.NewVersion}"));
+                        }
+                    }
+
                     var args = new GenericQuestionEventArgs(
-                        "Install Packages?", string.Join("\n", selectedPackages)
+                        "Install Packages?", message
                     );
 
                     genericQuestionService.RaiseQuestion(args);
