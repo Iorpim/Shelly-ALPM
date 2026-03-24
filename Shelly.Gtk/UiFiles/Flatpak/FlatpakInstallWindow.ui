@@ -15,12 +15,15 @@
                         <property name="vexpand">true</property>
                         <property name="hexpand">true</property>
                         <child>
-                            <object class="GtkScrolledWindow">
+                            <object class="GtkScrolledWindow" id="flow_list_scroll_window">
                                 <property name="overlay-scrolling">false</property>
                                 <property name="vexpand">true</property>
                                 <property name="hexpand">true</property>
                                 <child>
-                                    <object class="GtkListView" id="list_flatpaks"/>
+                                    <object class="GtkFlowBox" id="list_flatpaks">
+                                        <property name="halign">center</property>
+                                        <property name="valign">start</property>
+                                    </object>
                                 </child>
                             </object>
                         </child>

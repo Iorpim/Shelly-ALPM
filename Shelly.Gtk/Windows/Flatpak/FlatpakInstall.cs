@@ -1,3 +1,4 @@
+using System.Runtime.CompilerServices;
 using GObject;
 using Gtk;
 using Shelly.Gtk.Enums;
@@ -16,16 +17,15 @@ public class FlatpakInstall(
     IConfigService configService,
     IGenericQuestionService genericQuestionService) : IShellyWindow
 {
-    private ListView? _listView;
+    private readonly ConditionalWeakTable<Widget, AppstreamApp> _widgetData = new();
+
+    private FlowBox _flowBox = null!;
     private readonly CancellationTokenSource _cts = new();
-    private Gio.ListStore? _listStore;
-    private SingleSelection? _selectionModel;
     private SignalHandler<Button>? _versionHistoryHandler;
     private ListBox? _categoryListBox;
     private List<AppstreamApp> _allPackages = [];
     private string _searchText = string.Empty;
     private FlatpakCategories _selectedCategory = FlatpakCategories.AllApplications;
-    private SignalListItemFactory? _factory;
     private Box? _overlay;
     private Button _overlayCloseButton = null!;
     private Button _overlayInstallButton = null!;
@@ -60,17 +60,28 @@ public class FlatpakInstall(
     private Gio.ListStore? _remoteListStore;
     private SingleSelection? _remoteSelectionModel;
     private SignalListItemFactory? _remoteFactory;
-    
+
     private Button _installFromFlatpakRef = null!;
     private DropDown _installFromFlatpakRefDropDown = null!;
-     private string _selectedRefScope = "system";
-    
+    private string _selectedRefScope = "system";
+
+    private FlowBoxFilterFunc _filterFunc = null!;
+
+
     public Widget CreateWindow()
     {
         var builder = Builder.NewFromString(ResourceHelper.LoadUiFile("UiFiles/Flatpak/FlatpakInstallWindow.ui"), -1);
         var box = (Box)builder.GetObject("FlatpakInstallWindow")!;
 
-        _listView = (ListView)builder.GetObject("list_flatpaks")!;
+        _flowBox = (FlowBox)builder.GetObject("list_flatpaks")!;
+
+        _flowBox.SetHomogeneous(false);
+        _flowBox.SetMaxChildrenPerLine(4);
+        _flowBox.SetMinChildrenPerLine(1);
+        _flowBox.SetColumnSpacing(8);
+        _flowBox.SetRowSpacing(8);
+        _flowBox.SetSelectionMode(SelectionMode.None);
+
         var reloadButton = (Button)builder.GetObject("reload_button")!;
         var searchEntry = (SearchEntry)builder.GetObject("search_entry")!;
         _categoryListBox = (ListBox)builder.GetObject("category_list")!;
@@ -100,7 +111,7 @@ public class FlatpakInstall(
         _addRemoteUrlEntry = (Entry)builder.GetObject("overlay_add_remote_url_entry")!;
         _addRemoteScopeDropDown = (DropDown)builder.GetObject("overlay_add_remote_scope_dropdown")!;
         _deleteRemoteButton = (Button)builder.GetObject("overlay_delete_remote_button")!;
-        
+
         _installFromFlatpakRef = (Button)builder.GetObject("install_from_flatpak_ref_button")!;
         _installFromFlatpakRefDropDown = (DropDown)builder.GetObject("install_from_flatpak_ref_dropdown")!;
 
@@ -115,7 +126,7 @@ public class FlatpakInstall(
             var selectedIndex = _installFromFlatpakRefDropDown.GetSelected();
             _selectedRefScope = selectedIndex == 0 ? "system" : "user";
         };
-        
+
 
         _addRemoteButton.OnClicked += (_, _) =>
         {
@@ -152,7 +163,8 @@ public class FlatpakInstall(
 
             if (!result.Success)
             {
-                genericQuestionService.RaiseToastMessage(new ToastMessageEventArgs($"Failed to add remote: {result.Error}"));
+                genericQuestionService.RaiseToastMessage(
+                    new ToastMessageEventArgs($"Failed to add remote: {result.Error}"));
                 return;
             }
 
@@ -247,26 +259,16 @@ public class FlatpakInstall(
             _categoryListBox.Append(gtkBox);
         }
 
-
-        _listStore = Gio.ListStore.New(FlatpakGObject.GetGType());
-
-        _selectionModel = SingleSelection.New(_listStore);
-        _listView.SetModel(_selectionModel);
-        _listView.SingleClickActivate = true;
-
-        _factory = SignalListItemFactory.New();
-        _factory.OnSetup += OnSetup;
-        _factory.OnBind += OnBind;
-        _listView.SetFactory(_factory);
-
-        _listView.OnRealize += (_, _) => { _ = LoadDataAsync(_cts.Token); };
+        _flowBox.OnRealize += (_, _) => { _ = LoadDataAsync(_cts.Token); };
 
         reloadButton.OnClicked += (_, _) => { _ = LoadDataAsync(); };
         searchEntry.OnSearchChanged += (_, _) =>
         {
             _searchText = searchEntry.GetText();
-            ApplyFilter();
+            _flowBox.InvalidateFilter();
         };
+
+        SetupSearch();
 
         _categoryListBox.OnRowSelected += (_, args) =>
         {
@@ -278,19 +280,15 @@ public class FlatpakInstall(
             _remoteRefOverlay.Dispose();
             _addRemoteOverlay.Dispose();
             _overlay.Dispose();
-            ApplyFilter();
+            _flowBox.InvalidateFilter();
         };
 
-        _listView.OnActivate += (_, _) =>
+        _flowBox.OnChildActivated += (_, args) =>
         {
-            var item = _selectionModel.GetSelectedItem();
+            var widget = args.Child.GetChild();
+            if (widget is null || !_widgetData.TryGetValue(widget, out var obj)) return;
 
-            if (item is not FlatpakGObject pkgObj) return;
-
-            var obj = pkgObj.Package;
-
-            if (obj == null) return;
-
+            Console.WriteLine($"Clicked: {obj.Name} ({obj.Id})");
             _overlayCloseButton.OnClicked += (_, _) =>
             {
                 _overlay.SetVisible(false);
@@ -307,7 +305,8 @@ public class FlatpakInstall(
             _overlaySummaryLabel.SetText(obj.Summary);
             _overlayDescriptionLabel.SetText(obj.Description);
             var result = unprivilegedOperationService
-                .GetFlatpakAppDataAsync(obj.Remotes.FirstOrDefault()?.Name ?? String.Empty, obj.Id, "stable").Result;
+                .GetFlatpakAppDataAsync(obj.Remotes.FirstOrDefault()?.Name ?? String.Empty, obj.Id, "stable")
+                .Result;
 
             _overlaySizeLabel.SetText(SizeHelpers.FormatSize((long)result));
 
@@ -347,6 +346,31 @@ public class FlatpakInstall(
         };
 
         return box;
+    }
+
+    private void SetupSearch()
+    {
+        _filterFunc = (child) =>
+        {
+            var widget = child.GetChild();
+            if (widget is not null && _widgetData.TryGetValue(widget, out var info))
+            {
+                var matchesSearch = string.IsNullOrWhiteSpace(_searchText)
+                                    || info.Name.Contains(_searchText, StringComparison.OrdinalIgnoreCase)
+                                    || info.Id.Contains(_searchText, StringComparison.OrdinalIgnoreCase)
+                                    || info.Summary.Contains(_searchText, StringComparison.OrdinalIgnoreCase);
+
+                var matchesCategory = _selectedCategory == FlatpakCategories.AllApplications
+                                      || info.Categories.Contains(_selectedCategory.ToString(),
+                                          StringComparer.OrdinalIgnoreCase);
+
+                return matchesSearch && matchesCategory;
+            }
+
+            return true;
+        };
+
+        _flowBox.SetFilterFunc(_filterFunc);
     }
 
     private void SetUrlLinks(Dictionary<string, string>? urls)
@@ -418,67 +442,6 @@ public class FlatpakInstall(
         }
     }
 
-    private static void OnSetup(SignalListItemFactory sender, SignalListItemFactory.SetupSignalArgs args)
-    {
-        var listItem = (ListItem)args.Object;
-        var hbox = Box.New(Orientation.Horizontal, 10);
-        hbox.MarginStart = 10;
-        hbox.MarginEnd = 10;
-        hbox.MarginTop = 5;
-        hbox.MarginBottom = 5;
-
-        var icon = Image.New();
-        hbox.Append(icon);
-
-        var vbox = Box.New(Orientation.Vertical, 2);
-        var nameLabel = Label.New(string.Empty);
-        nameLabel.Halign = Align.Start;
-        nameLabel.AddCssClass("heading");
-
-        var idLabel = Label.New(string.Empty);
-        idLabel.Halign = Align.Start;
-        idLabel.AddCssClass("dim-label");
-
-        vbox.Append(nameLabel);
-        vbox.Append(idLabel);
-        hbox.Append(vbox);
-
-        var versionLabel = Label.New(string.Empty);
-        versionLabel.Halign = Align.End;
-        versionLabel.Hexpand = true;
-        hbox.Append(versionLabel);
-
-        listItem.SetChild(hbox);
-    }
-
-    private void OnBind(SignalListItemFactory sender, SignalListItemFactory.BindSignalArgs args)
-    {
-        var listItem = (ListItem)args.Object;
-        if (listItem.GetItem() is not FlatpakGObject stringObj) return;
-        if (listItem.GetChild() is not Box hbox) return;
-
-        var packageId = stringObj.Package?.Id;
-        var package = _allPackages.FirstOrDefault(p => p.Id == packageId);
-        if (package == null) return;
-
-        var icon = (Image)hbox.GetFirstChild()!;
-        var vbox = (Box)icon.GetNextSibling()!;
-        var nameLabel = (Label)vbox.GetFirstChild()!;
-        var idLabel = (Label)nameLabel.GetNextSibling()!;
-        var versionLabel = (Label)vbox.GetNextSibling()!;
-
-        icon.SetFromFile(
-            $"/var/lib/flatpak/appstream/{package.Remotes.FirstOrDefault()!.Name}/x86_64/active/icons/64x64/{package.Id}.png");
-
-        nameLabel.SetText(package.Name);
-        idLabel.SetText(package.Summary);
-
-        if (package.Releases.Count != 0)
-        {
-            versionLabel.SetText(package.Releases.First().Version);
-        }
-    }
-
     private async Task LoadDataAsync(CancellationToken ct = default)
     {
         try
@@ -488,9 +451,19 @@ public class FlatpakInstall(
             ct.ThrowIfCancellationRequested();
             _allPackages = await unprivilegedOperationService.ListAppstreamFlatpak();
             ct.ThrowIfCancellationRequested();
+
+
             GLib.Functions.IdleAdd(0, () =>
             {
-                ApplyFilter();
+                foreach (var pkg in _allPackages)
+                {
+                    var card = BuildFlatpakCard(pkg.Name, pkg.Remotes.FirstOrDefault()?.Name ?? String.Empty, pkg.Id,
+                        pkg.Summary, pkg.IsVerified);
+                    _widgetData.Add(card, pkg);
+                    _flowBox.Insert(card, -1);
+                }
+
+                _allPackages.Clear();
                 return false;
             });
         }
@@ -501,36 +474,6 @@ public class FlatpakInstall(
         finally
         {
             lockoutService.Hide();
-        }
-    }
-
-
-    private void ApplyFilter()
-    {
-        if (_listStore == null) return;
-
-        var filtered = _allPackages.AsEnumerable();
-
-        if (!string.IsNullOrWhiteSpace(_searchText))
-        {
-            filtered = filtered.Where(p =>
-                p.Name.Contains(_searchText, StringComparison.OrdinalIgnoreCase) ||
-                p.Id.Contains(_searchText, StringComparison.OrdinalIgnoreCase));
-        }
-
-        if (_selectedCategory != FlatpakCategories.AllApplications)
-        {
-            var categoryName = _selectedCategory.ToString();
-            filtered = filtered.Where(p => p.Categories.Contains(categoryName, StringComparer.OrdinalIgnoreCase));
-        }
-
-        _listStore.RemoveAll();
-
-        foreach (var package in filtered)
-        {
-            var gObj = new FlatpakGObject();
-            gObj.Package = package;
-            _listStore.Append(gObj);
         }
     }
 
@@ -554,12 +497,13 @@ public class FlatpakInstall(
             if (file is not null)
             {
                 lockoutService.Show($"Installing selected ref...");
-                var result = await unprivilegedOperationService.FlatpakInsallFromRef(file.GetPath()!, _selectedRefScope);
+                var result =
+                    await unprivilegedOperationService.FlatpakInsallFromRef(file.GetPath()!, _selectedRefScope);
                 if (!result.Success)
                 {
                     Console.WriteLine($"Failed to install local package: {result.Error}");
                 }
-                
+
                 if (!result.Success)
                 {
                     var args = new ToastMessageEventArgs(
@@ -666,6 +610,76 @@ public class FlatpakInstall(
         _overlayBoxRoot.Append(scroll);
 
         genericQuestionService.RaiseDialog(new GenericDialogEventArgs(_overlayBoxRoot));
+    }
+
+    protected virtual Widget BuildFlatpakCard(string name, string remote, string id, string summary = "",
+        bool verified = false)
+    {
+        var hbox = Box.New(Orientation.Horizontal, 10);
+        hbox.MarginStart = 10;
+        hbox.MarginEnd = 10;
+        hbox.MarginTop = 5;
+        hbox.MarginBottom = 5;
+        hbox.Hexpand = false;
+        hbox.Vexpand = false;
+        hbox.Halign = Align.Start;
+
+
+        var icon = Image.New();
+        
+        icon.OnMap += (_, _) =>
+        {
+            var path = $"/var/lib/flatpak/appstream/{remote}/x86_64/active/icons/64x64/{id}.png";
+            if (File.Exists(path))
+                icon.SetFromFile(path);
+        };
+        icon.PixelSize = 64;
+        icon.WidthRequest = 64;
+        icon.HeightRequest = 64;
+        icon.Valign = Align.Center;
+        hbox.Append(icon);
+
+
+        var vbox = Box.New(Orientation.Vertical, 2);
+        var nameBox = Box.New(Orientation.Horizontal, 4);
+        nameBox.Halign = Align.Start;
+
+        var nameLabel = Label.New(name);
+        nameLabel.Halign = Align.Start;
+        nameLabel.AddCssClass("heading");
+        nameBox.Append(nameLabel);
+
+        if (verified)
+        {
+            var verifiedIcon = Image.NewFromIconName("checkmark-symbolic");
+            verifiedIcon.PixelSize = 14;
+            verifiedIcon.Valign = Align.Center;
+            verifiedIcon.TooltipText = "Verified";
+            nameBox.Append(verifiedIcon);
+        }
+        
+        var idLabel = Label.New(string.Empty);
+        idLabel.SetText(summary);
+        idLabel.Halign = Align.Start;
+        idLabel.AddCssClass("dim-label");
+        idLabel.SetWrap(true);
+        idLabel.SetWrapMode(Pango.WrapMode.WordChar);
+        idLabel.SetEllipsize(Pango.EllipsizeMode.None);
+        idLabel.MaxWidthChars = 35;
+        idLabel.WidthChars = -1;
+
+        vbox.Append(nameBox);
+        vbox.Append(idLabel);
+        hbox.Append(vbox);
+
+        var frame = Frame.New(null);
+        frame.SetChild(hbox);
+        frame.WidthRequest = 300;
+        frame.Hexpand = false;
+        frame.Halign = Align.Fill;
+        frame.AddCssClass("card");
+
+        return frame;
     }
 
     protected virtual Widget BuildReleaseCard(string version, string date, string description)
@@ -827,8 +841,9 @@ public class FlatpakInstall(
         _cts.Cancel();
         _cts.Dispose();
         _allPackages.Clear();
-        _listStore?.RemoveAll();
         _remoteListStore?.RemoveAll();
         _selectedPackage = null!;
+        _flowBox.RemoveAll();
+        _flowBox.Dispose();
     }
 }
