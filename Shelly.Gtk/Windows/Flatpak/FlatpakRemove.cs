@@ -197,7 +197,7 @@ public class FlatpakRemove(
         var closeButton = Button.NewWithLabel("Close");
         closeButton.OnClicked += (_, _) => dialogArgs.SetResponse(FlatpakRemoveEnum.Cancel);
 
-        var removeButton = Button.NewWithLabel("Remove");
+        var removeButton = Button.NewWithLabel("Confirm");
         removeButton.AddCssClass("suggested-action");
         removeButton.OnClicked += (_, _) =>
         {
@@ -213,8 +213,8 @@ public class FlatpakRemove(
         buttonBox.Hexpand = true;
         buttonBox.Homogeneous = true;
         buttonBox.Spacing= 5;
-        buttonBox.Append(closeButton);
         buttonBox.Append(removeButton);
+        buttonBox.Append(closeButton);
         box.Append(buttonBox);
 
         return dialogArgs;
@@ -260,7 +260,7 @@ public class FlatpakRemove(
         bool removeConfig;
 
         var args = BuildRemoveDialog();
-
+        
         genericQuestionService.RaiseDialog(args);
 
         var message = await args.ResponseTask;
