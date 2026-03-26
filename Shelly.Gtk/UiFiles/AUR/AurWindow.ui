@@ -21,6 +21,12 @@
         </object>
       </child>
       <child>
+        <object class="GtkCheckButton" id="chroot_check">
+          <property name="label">Use chroot</property>
+          <property name="tooltip-text">Build packages in a clean chroot environment</property>
+        </object>
+      </child>
+      <child>
         <object class="GtkBox">
           <property name="hexpand">true</property>
         </object>

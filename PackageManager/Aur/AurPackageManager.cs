@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 using System.Net.Http;
 using System.Text.RegularExpressions;
@@ -51,13 +52,16 @@ public class AurPackageManager(string? configPath = null)
     private HttpClient _httpClient = new HttpClient();
     private List<string> _availablePackages = [];
     private readonly HashSet<string> _currentlyInstallingAurDeps = new();
+    private bool _useChroot = false;
+    private string _chrootPath;
 
     public event EventHandler<PackageProgressEventArgs>? PackageProgress;
     public event EventHandler<PkgbuildDiffRequestEventArgs>? PkgbuildDiffRequest;
     public event EventHandler<AlpmQuestionEventArgs>? Question;
     public event EventHandler<AlpmProgressEventArgs>? Progress;
 
-    public async Task Initialize(bool root = false, bool useTempPath = false, string tempPath = "")
+    public async Task Initialize(bool root = false, bool useTempPath = false, bool useChroot = false,
+        string chrootPath = "/var/lib/shelly/chroot", string tempPath = "")
     {
         _alpm = configPath is null ? new AlpmManager() : new AlpmManager(configPath);
         _alpm.Initialize(root, useTempPath, tempPath);
@@ -65,6 +69,8 @@ public class AurPackageManager(string? configPath = null)
         _alpm.Progress += (sender, args) => Progress?.Invoke(this, args);
         _aurSearchManager = new AurSearchManager(_httpClient);
         _availablePackages = _alpm.GetAvailablePackages().Select(x => x.Name).ToList();
+        _useChroot = useChroot;
+        _chrootPath = chrootPath;
         // Import caches from other AUR helpers (paru, yay) for installed foreign packages
         await ImportOtherAurHelperCaches();
     }
@@ -348,19 +354,12 @@ public class AurPackageManager(string? configPath = null)
                 System.IO.File.Delete(oldPkgFile);
             }
 
-            var buildProcess = new System.Diagnostics.Process
+            if (_useChroot)
             {
-                StartInfo = new System.Diagnostics.ProcessStartInfo
-                {
-                    FileName = "sudo",
-                    Arguments = $"-u {user} makepkg -f --noconfirm --skippgpcheck",
-                    WorkingDirectory = tempPath,
-                    RedirectStandardOutput = true,
-                    RedirectStandardError = true,
-                    UseShellExecute = false,
-                    CreateNoWindow = true,
-                }
-            };
+                EnsureChrootExists();
+            }
+
+            var buildProcess = CreateBuildProcess(tempPath);
             buildProcess.OutputDataReceived += (sender, e) =>
             {
                 if (e.Data?.Contains('%') == true)
@@ -460,7 +459,6 @@ public class AurPackageManager(string? configPath = null)
         _alpm.RemovePackages(packageNames, flags);
         foreach (var packageName in packageNames)
         {
-
             // Clean up cache folder
             var user = Environment.GetEnvironmentVariable("SUDO_USER") ?? Environment.UserName;
             var home = $"/home/{user}";
@@ -551,19 +549,12 @@ public class AurPackageManager(string? configPath = null)
         }
 
 
-        var buildProcess = new System.Diagnostics.Process
+        if (_useChroot)
         {
-            StartInfo = new System.Diagnostics.ProcessStartInfo
-            {
-                FileName = "sudo",
-                Arguments = $"-u {user} makepkg --noconfirm",
-                WorkingDirectory = tempPath,
-                RedirectStandardOutput = true,
-                RedirectStandardError = true,
-                UseShellExecute = false,
-                CreateNoWindow = true,
-            }
-        };
+            EnsureChrootExists();
+        }
+
+        var buildProcess = CreateBuildProcess(tempPath, "--noconfirm");
         buildProcess.OutputDataReceived += (sender, e) =>
         {
             if (!string.IsNullOrEmpty(e.Data))
@@ -987,19 +978,12 @@ public class AurPackageManager(string? configPath = null)
                 MakePkgAndInstallAurDependency(pkg);
             }
 
-            var buildProcess = new System.Diagnostics.Process
+            if (_useChroot)
             {
-                StartInfo = new System.Diagnostics.ProcessStartInfo
-                {
-                    FileName = "sudo",
-                    Arguments = $"-u {user} makepkg -f --noconfirm --skippgpcheck",
-                    WorkingDirectory = tempPath,
-                    RedirectStandardOutput = true,
-                    RedirectStandardError = true,
-                    UseShellExecute = false,
-                    CreateNoWindow = true,
-                }
-            };
+                EnsureChrootExists();
+            }
+
+            var buildProcess = CreateBuildProcess(tempPath);
             buildProcess.OutputDataReceived += (sender, e) =>
             {
                 if (e.Data?.Contains('%') == true)
@@ -1031,7 +1015,8 @@ public class AurPackageManager(string? configPath = null)
             buildProcess.WaitForExit();
             if (buildProcess.ExitCode != 0)
             {
-                Console.Error.WriteLine($"[Shelly] Failed to build AUR dependency: {packageName} (exit code {buildProcess.ExitCode})");
+                Console.Error.WriteLine(
+                    $"[Shelly] Failed to build AUR dependency: {packageName} (exit code {buildProcess.ExitCode})");
                 return;
             }
 
@@ -1041,6 +1026,7 @@ public class AurPackageManager(string? configPath = null)
                 Console.Error.WriteLine($"[Shelly] No package file found after building: {packageName}");
                 return;
             }
+
             _alpm.InstallLocalPackage(pkgFiles[0]);
             _alpm.Refresh();
             alpmPackages = _alpm.GetAvailablePackages().Select(x => x.Name).ToList();
@@ -1050,5 +1036,98 @@ public class AurPackageManager(string? configPath = null)
         {
             _currentlyInstallingAurDeps.Remove(packageName);
         }
+    }
+
+    private void EnsureChrootExists()
+    {
+        var chrootRoot = Path.Combine(_chrootPath, "root");
+        if (Directory.Exists(chrootRoot))
+        {
+            UpdateChroot();
+            CopyMakepkgConfToChroot();
+            return;
+        }
+
+        Directory.CreateDirectory(_chrootPath);
+
+        var initProcess = new System.Diagnostics.Process
+        {
+            StartInfo = new System.Diagnostics.ProcessStartInfo
+            {
+                FileName = "mkarchroot",
+                Arguments = $"{chrootRoot} base-devel",
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                UseShellExecute = false,
+                CreateNoWindow = true,
+            }
+        };
+        initProcess.Start();
+        initProcess.WaitForExit();
+
+        if (initProcess.ExitCode != 0)
+            throw new Exception("Failed to initialize chroot environment");
+
+        CopyMakepkgConfToChroot();
+    }
+
+    private void UpdateChroot()
+    {
+        var chrootRoot = Path.Combine(_chrootPath, "root");
+        var updateProcess = new System.Diagnostics.Process
+        {
+            StartInfo = new System.Diagnostics.ProcessStartInfo
+            {
+                FileName = "arch-nspawn",
+                Arguments = $"{chrootRoot} pacman -Syu --noconfirm",
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                UseShellExecute = false,
+                CreateNoWindow = true,
+            }
+        };
+        updateProcess.Start();
+        updateProcess.WaitForExit();
+    }
+
+    private void CopyMakepkgConfToChroot()
+    {
+        var destination = Path.Combine(_chrootPath, "root", "etc", "makepkg.conf");
+        File.Copy("/etc/makepkg.conf", destination, overwrite: true);
+    }
+
+    private System.Diagnostics.Process CreateBuildProcess(string tempPath, string makepkgArgs = "-f --noconfirm --skippgpcheck")
+    {
+        if (_useChroot)
+        {
+            return new System.Diagnostics.Process
+            {
+                StartInfo = new System.Diagnostics.ProcessStartInfo
+                {
+                    FileName = "makechrootpkg",
+                    Arguments = $"-c -r {_chrootPath}",
+                    WorkingDirectory = tempPath,
+                    RedirectStandardOutput = true,
+                    RedirectStandardError = true,
+                    UseShellExecute = false,
+                    CreateNoWindow = true,
+                }
+            };
+        }
+
+        var user = Environment.GetEnvironmentVariable("SUDO_USER") ?? Environment.UserName;
+        return new System.Diagnostics.Process
+        {
+            StartInfo = new System.Diagnostics.ProcessStartInfo
+            {
+                FileName = "sudo",
+                Arguments = $"-u {user} makepkg {makepkgArgs}",
+                WorkingDirectory = tempPath,
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                UseShellExecute = false,
+                CreateNoWindow = true,
+            }
+        };
     }
 }

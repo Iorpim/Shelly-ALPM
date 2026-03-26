@@ -41,6 +41,7 @@ public class AurInstall(
     private ColumnViewColumn _popColumn = null!;
     private ColumnViewColumn _versionColumn = null!;
     private Button _installButton = null!;
+    private CheckButton _chrootCheck = null!;
 
     public Widget CreateWindow()
     {
@@ -65,6 +66,7 @@ public class AurInstall(
         _versionColumn.Resizable = true;
         _installButton = (Button)builder.GetObject("install_button")!;
         _installButton.SetSensitive(false);
+        _chrootCheck = (CheckButton)builder.GetObject("chroot_check")!;
         _listStore = Gio.ListStore.New(AurPackageGObject.GetGType());
         _selectionModel = SingleSelection.New(_listStore);
         _selectionModel.CanUnselect = true;
@@ -299,7 +301,7 @@ public class AurInstall(
                     }
                 }
 
-                result = await privilegedOperationService.InstallAurPackagesAsync(selectedPackages);
+                result = await privilegedOperationService.InstallAurPackagesAsync(selectedPackages, _chrootCheck.GetActive());
                 if (!result.Success)
                 {
                     Console.WriteLine($"Failed to install packages: {result.Error}");

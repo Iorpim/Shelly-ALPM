@@ -190,9 +190,14 @@ public class PrivilegedOperationService : IPrivilegedOperationService
         );
     }
 
-    public async Task<OperationResult> InstallAurPackagesAsync(IEnumerable<string> packages)
+    public async Task<OperationResult> InstallAurPackagesAsync(IEnumerable<string> packages, bool useChroot = false)
     {
         var packageArgs = string.Join(" ", packages);
+        if (useChroot)
+        {
+            packageArgs += " -c";
+        }
+
         return await ExecutePrivilegedWithNoConfirmCheck("Install AUR packages", "aur", "install", packageArgs);
     }
 

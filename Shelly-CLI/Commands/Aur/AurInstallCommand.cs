@@ -44,7 +44,7 @@ public class AurInstallCommand : AsyncCommand<AurInstallSettings>
         {
             RootElevator.EnsureRootExectuion();
             manager = new AurPackageManager();
-            await manager.Initialize(root: true);
+            await manager.Initialize(root: true, useChroot: settings.UseChroot);
             object renderLock = new();
 
             manager.PackageProgress += (sender, args) =>
@@ -173,7 +173,7 @@ public class AurInstallCommand : AsyncCommand<AurInstallSettings>
         try
         {
             manager = new AurPackageManager();
-            await manager.Initialize(root: true);
+            await manager.Initialize(root: true, useChroot: settings.UseChroot);
 
             var packageList = settings.Packages.ToList();
 

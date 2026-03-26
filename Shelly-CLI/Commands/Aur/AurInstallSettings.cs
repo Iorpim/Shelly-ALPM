@@ -12,4 +12,8 @@ public class AurInstallSettings : AurPackageSettings
     [CommandOption("-m|--make-deps")]
     [Description("Install make dependencies only for the specified AUR packages")]
     public bool MakeDepsOn { get; set; }
+    
+    [CommandOption("-c|--chroot")]
+    [Description("Build packages in a clean chroot environment using makechrootpkg")]
+    public bool UseChroot { get; set; }
 }
