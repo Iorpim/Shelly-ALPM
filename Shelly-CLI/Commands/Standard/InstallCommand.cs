@@ -124,6 +124,16 @@ public class InstallCommand : Command<InstallPackageSettings>
             }
         };
         
+        manager.ScriptletInfo += (sender, args) =>
+        {
+            Console.WriteLine(args.Line);
+        };
+
+        manager.HookRun += (sender, args) =>
+        {
+            Console.WriteLine(args.Description);
+        };
+
         manager.InstallPackages(packageList);
         Console.WriteLine(); // Final newline after last package
 

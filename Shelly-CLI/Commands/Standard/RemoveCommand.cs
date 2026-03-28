@@ -101,6 +101,16 @@ public class RemoveCommand : Command<RemovePackageSettings>
         {
             flags |= AlpmTransFlag.Cascade;
         }
+        manager.ScriptletInfo += (sender, args) =>
+        {
+            Console.WriteLine(args.Line);
+        };
+
+        manager.HookRun += (sender, args) =>
+        {
+            Console.WriteLine(args.Description);
+        };
+
         manager.RemovePackages(packageList,flags);
         if (settings.RemoveConfig)
         {

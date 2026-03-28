@@ -117,6 +117,16 @@ public class UpgradeCommand : AsyncCommand<UpgradeSettings>
                         ctx.Refresh();
                     }
                 };
+                manager.ScriptletInfo += (sender, args) =>
+                {
+                    Console.WriteLine(args.Line);
+                };
+
+                manager.HookRun += (sender, args) =>
+                {
+                    Console.WriteLine(args.Description);
+                };
+
                 await manager.SyncSystemUpdate();
             });
 

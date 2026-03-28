@@ -40,6 +40,7 @@ public class AlpmManager(string configPath = "/etc/pacman.conf") : IDisposable, 
     public event EventHandler<AlpmQuestionEventArgs>? Question;
     public event EventHandler<AlpmReplacesEventArgs>? Replaces;
     public event EventHandler<AlpmScriptletEventArgs>? ScriptletInfo;
+    public event EventHandler<AlpmHookEventArgs>? HookRun;
 
     public void IntializeWithSync()
     {
@@ -1849,7 +1850,7 @@ public class AlpmManager(string configPath = "/etc/pacman.conf") : IDisposable, 
                         ? $"({position}/{total}) {desc}"
                         : $"({position}/{total}) {name ?? "Running hook..."}";
 
-                    Console.Error.WriteLine($"[ALPM_HOOK]{hookLine}");
+                    HookRun?.Invoke(this, new AlpmHookEventArgs(hookLine, position, total));
                     break;
                 }
                 case AlpmEventType.HookRunDone:
