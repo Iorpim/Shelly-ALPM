@@ -33,6 +33,7 @@ public class AlpmManager(string configPath = "/etc/pacman.conf") : IDisposable, 
     private AlpmQuestionCallback _questionCallback;
     private AlpmProgressCallback? _progressCallback;
     private int _parallelDownloads = 1;
+    private bool _isPackageDownload;
 
     public event EventHandler<AlpmProgressEventArgs>? Progress;
     public event EventHandler<AlpmPackageOperationEventArgs>? PackageOperation;
@@ -42,7 +43,7 @@ public class AlpmManager(string configPath = "/etc/pacman.conf") : IDisposable, 
     public void IntializeWithSync()
     {
         Initialize(true);
-        Sync();
+        Sync(true);
     }
 
     public void Initialize(bool root = false, int parallelDownloads = 10, bool useTempPath = false,
@@ -476,7 +477,7 @@ public class AlpmManager(string configPath = "/etc/pacman.conf") : IDisposable, 
             var directory = Path.GetDirectoryName(localpath);
             if (directory != null) Directory.CreateDirectory(directory);
 
-            if (File.Exists(localpath) && force == 0)
+            if (_isPackageDownload && File.Exists(localpath) && force == 0)
             {
                 return 0;
             }
@@ -738,6 +739,7 @@ public class AlpmManager(string configPath = "/etc/pacman.conf") : IDisposable, 
 
     public void Sync(bool force = false)
     {
+        _isPackageDownload = false;
         if (_handle == IntPtr.Zero) Initialize();
         var syncDbsPtr = GetSyncDbs(_handle);
         if (syncDbsPtr != IntPtr.Zero)
@@ -1212,6 +1214,7 @@ public class AlpmManager(string configPath = "/etc/pacman.conf") : IDisposable, 
         Update(_handle, syncDbsPtr, true);
         try
         {
+            _isPackageDownload = true;
             var updates = GetPackagesNeedingUpdate();
             var downloadTasks = updates.Select(pkg => Task.Run(() =>
             {
@@ -1236,7 +1239,7 @@ public class AlpmManager(string configPath = "/etc/pacman.conf") : IDisposable, 
                     ));
                 }
             }));
-            await Task.WhenAll(downloadTasks);
+            await Task.WhenAll(downloadTasks); 
             if (TransInit(_handle, flags) != 0)
             {
                 Console.Error.WriteLine(

@@ -154,7 +154,7 @@ public class InstallCommand : Command<InstallPackageSettings>
 
         var manager = new AlpmManager();
         manager.Question += (sender, args) => { QuestionHandler.HandleQuestion(args, true, settings.NoConfirm); };
-        Console.Error.WriteLine("Initializing and syncing ALPM...");
+        Console.Error.WriteLine("Initializing ALPM...");
         manager.Initialize(true);
 
         if (settings.BuildDepsOn)
