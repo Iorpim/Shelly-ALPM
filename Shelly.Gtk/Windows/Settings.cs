@@ -19,11 +19,18 @@ public class Settings(
     private Box _box = null!;
     private ShellyConfig _config = null!;
     private Overlay? _parentOverlay;
+    private List<ReleaseNotesDialog.ReleaseItem>? _cachedReleaseList = null!;
+    private string? _cachedLatestVersion = null!;
 
     public void SetParentOverlay(Overlay overlay)
     {
         _parentOverlay = overlay;
     }
+    
+    private static readonly HttpClient _httpClient = new()
+    {
+        DefaultRequestHeaders = { UserAgent = { new("Shelly-ALPM", null) } }
+    };
     
     public event Action? NavigationToHomeRequested;
 
@@ -386,15 +393,28 @@ public class Settings(
                 new ToastMessageEventArgs("Overlay not available"));
             return;
         }
-
+        
         try
         {
-            using var client = new HttpClient();
-            client.DefaultRequestHeaders.UserAgent.ParseAdd("Shelly-ALPM");
+            
+            _httpClient.DefaultRequestHeaders.UserAgent.ParseAdd("Shelly-ALPM");
 
             var url = "https://api.github.com/repos/Seafoam-Labs/Shelly-ALPM/releases";
-            var json = await client.GetStringAsync(url);
-
+            var latestJson = await _httpClient.GetStringAsync($"{url}/latest");
+            using var latestDoc = JsonDocument.Parse(latestJson);
+            var latestTag = latestDoc.RootElement
+                .TryGetProperty("tag_name", out var tagProp)
+                ? tagProp.GetString()
+                : null;
+            
+            if (_cachedReleaseList is not null && latestTag == _cachedLatestVersion)
+            {
+                Console.WriteLine("Cached Releases used");
+                ReleaseNotesDialog.ShowReleaseHistoryDialog(_parentOverlay, _cachedReleaseList);
+                return;
+            }
+            
+            var json = await _httpClient.GetStringAsync(url);
             using var document = JsonDocument.Parse(json);
             var root = document.RootElement;
 
@@ -441,6 +461,9 @@ public class Settings(
                     new ToastMessageEventArgs("No changelog entries found"));
                 return;
             }
+
+            _cachedReleaseList = releases;
+            _cachedLatestVersion = latestTag;
 
             ReleaseNotesDialog.ShowReleaseHistoryDialog(_parentOverlay, releases);
         }

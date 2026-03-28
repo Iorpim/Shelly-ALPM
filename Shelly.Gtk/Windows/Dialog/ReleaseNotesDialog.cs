@@ -155,7 +155,7 @@ public static partial class ReleaseNotesDialog
         }
     }
     
-    private static Widget BuildReleaseCard(ReleaseItem release)
+    private static Box BuildReleaseCard(ReleaseItem release)
     {
         var card = Box.New(Orientation.Vertical, 8);
         card.AddCssClass("card");

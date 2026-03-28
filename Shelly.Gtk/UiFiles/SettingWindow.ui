@@ -296,6 +296,14 @@
           </object>
         </child>
         <child>
+          <object class="GtkButton" id="changelog_button">
+            <property name="label">View Changelog</property>
+            <style>
+              <class name="suggested-action"/>
+            </style>
+          </object>
+        </child>
+        <child>
           <object class="GtkBox">
             <property name="orientation">horizontal</property>
             <property name="spacing">10</property>
@@ -307,11 +315,6 @@
                 <style>
                   <class name="dim-label"/>
                 </style>
-              </object>
-            </child>
-            <child>
-              <object class="GtkButton" id="changelog_button">
-                <property name="label">View Changelog</property>
               </object>
             </child>
             <child>
