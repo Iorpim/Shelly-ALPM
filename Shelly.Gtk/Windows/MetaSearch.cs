@@ -129,13 +129,23 @@ public class MetaSearch(
         _nameFactory.OnSetup += (_, args) =>
         {
             if (args.Object is not ColumnViewCell listItem) return;
-            listItem.SetChild(new Label { Halign = Align.Start, MarginStart = 6 });
+            var box = Box.New(Orientation.Horizontal, 6);
+            var label = new Label { Halign = Align.Start, MarginStart = 6 };
+            var installedIcon = Image.NewFromIconName("object-select-symbolic");
+            box.Append(label);
+            box.Append(installedIcon);
+            listItem.SetChild(box);
         };
         _nameFactory.OnBind += (_, args) =>
         {
             if (args.Object is not ColumnViewCell listItem) return;
-            if (listItem.GetItem() is MetaPackageGObject { Package: { } pkg } && listItem.GetChild() is Label label)
-                label.SetText(pkg.Name);
+            if (listItem.GetItem() is not MetaPackageGObject { Package: { } pkg } ||
+                listItem.GetChild() is not Box box) return;
+            var label = (Label)box.GetFirstChild()!;
+            var installedIcon = (Image)label.GetNextSibling()!;
+            label.SetText(pkg.Name);
+            installedIcon.Visible = pkg.IsInstalled;
+            installedIcon.TooltipText = "Installed";
         };
         nameColumn.SetFactory(_nameFactory);
 
