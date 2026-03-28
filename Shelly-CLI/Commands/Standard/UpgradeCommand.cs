@@ -46,7 +46,7 @@ public class UpgradeCommand : AsyncCommand<UpgradeSettings>
         };
 
         AnsiConsole.MarkupLine("[yellow]Checking for system updates...[/]");
-        AnsiConsole.MarkupLine("[yellow] Initializing and syncing repositories...[/]");
+        AnsiConsole.MarkupLine("[yellow]Initializing and syncing repositories...[/]");
         manager.IntializeWithSync();
         var packagesNeedingUpdate = manager.GetPackagesNeedingUpdate();
         if (packagesNeedingUpdate.Count == 0)
