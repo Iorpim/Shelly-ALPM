@@ -74,11 +74,7 @@ public class ShellyFileLogger : TextWriter
         }
         _lineBuffer.Clear();
     }
-
-    /// <summary>
-    /// Opens the log file for appending, performing rotation if needed.
-    /// Returns null if the file cannot be opened (e.g., permission denied).
-    /// </summary>
+    
     public static StreamWriter? OpenLogFile()
     {
         try
@@ -96,9 +92,6 @@ public class ShellyFileLogger : TextWriter
         }
     }
 
-    /// <summary>
-    /// Writes a session header to the log file.
-    /// </summary>
     public static void WriteSessionHeader(StreamWriter writer, string[] args)
     {
         var user = Environment.GetEnvironmentVariable("SUDO_USER")
