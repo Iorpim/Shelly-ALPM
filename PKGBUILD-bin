@@ -43,7 +43,7 @@ package() {
   install -Dm755 "$srcdir/shelly" "$pkgdir/usr/bin/shelly"
 
   # Install desktop entry
-  cat <<'EOF' | install -Dm644 /dev/stdin "$pkgdir/usr/share/applications/shelly.desktop"
+  cat <<'EOF' | install -Dm644 /dev/stdin "$pkgdir/usr/share/applications/com.shellyorg.shelly.desktop"
 [Desktop Entry]
 Name=Shelly
 Comment=A Modern Arch Package Manager
