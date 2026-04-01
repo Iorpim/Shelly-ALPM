@@ -9,6 +9,7 @@ using System.Runtime.InteropServices;
 using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 using PackageManager.Alpm.Events;
+using PackageManager.Alpm.Events.EventArgs;
 using PackageManager.Alpm.Questions;
 using PackageManager.Utilities;
 using static PackageManager.Alpm.AlpmReference;
@@ -41,6 +42,8 @@ public class AlpmManager(string configPath = "/etc/pacman.conf") : IDisposable, 
     public event EventHandler<AlpmReplacesEventArgs>? Replaces;
     public event EventHandler<AlpmScriptletEventArgs>? ScriptletInfo;
     public event EventHandler<AlpmHookEventArgs>? HookRun;
+    public event EventHandler<AlpmPacnewEventArgs>? PacnewInfo;
+    public event EventHandler<AlpmPacsaveEventArgs>? PacsaveInfo;
 
     public void IntializeWithSync()
     {
@@ -1928,7 +1931,7 @@ public class AlpmManager(string configPath = "/etc/pacman.conf") : IDisposable, 
                     bool fromNoupgrade = pacnewEvent.FromNoUpgrade != 0;
 
                     Console.Error.WriteLine($"[ALPM] .pacnew file created: {file}");
-                    // Raise a C# event here if desired
+                    PacnewInfo?.Invoke(this, new AlpmPacnewEventArgs(file!));
                     break;
                 case AlpmEventType.PacsaveCreated:
                     Console.Error.WriteLine("[ALPM] .pacsave file created.");
@@ -1946,7 +1949,8 @@ public class AlpmManager(string configPath = "/etc/pacman.conf") : IDisposable, 
                     }
 
                     Console.Error.WriteLine($"[ALPM] .pacsave file created: {fileLocation}");
-                    // Raise a C# event here if desired
+                    PacsaveInfo?.Invoke(this,
+                        new AlpmPacsaveEventArgs(pkgNameOld ?? "No package name", fileLocation ?? "No file location"));
                     break;
 
                 default:
