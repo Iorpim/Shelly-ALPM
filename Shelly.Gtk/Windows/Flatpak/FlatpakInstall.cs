@@ -34,7 +34,6 @@ public class FlatpakInstall(
     private Spinner? _loadingSpinner;
     private Button _overlayCloseButton = null!;
     private Button _overlayInstallButton = null!;
-    private Button _overlayRunButton = null!;
     private Button _versionHistoryButton = null!;
     private Label _overlayAuthorLabel = null!;
     private Label _overlayNameLabel = null!;
@@ -107,7 +106,6 @@ public class FlatpakInstall(
 
         _overlayCloseButton = (Button)builder.GetObject("overlay_back_button")!;
         _overlayInstallButton = (Button)builder.GetObject("overlay_install_button")!;
-        _overlayRunButton = (Button)builder.GetObject("overlay_run_button")!;
         _versionHistoryButton = (Button)builder.GetObject("version_history_button")!;
         _remoteRefButton = (Button)builder.GetObject("remote_ref_management")!;
         _remoteRefBackButton = (Button)builder.GetObject("overlay_remote_back_button")!;
@@ -124,7 +122,6 @@ public class FlatpakInstall(
         _installFromFlatpakRefDropDown = (DropDown)builder.GetObject("install_from_flatpak_ref_dropdown")!;
 
         _overlayInstallButton.OnClicked += (_, _) => { _ = InstallSelectedAsync(); };
-        _overlayRunButton.OnClicked += (_, _) => { _ = RunSelectedAsync(); };
         _remoteRefButton.OnClicked += (_, _) => { _ = BuildAndShowRemoteRef(builder); };
         _remoteRefBackButton.OnClicked += (_, _) => { _remoteRefOverlay.Hide(); };
         _installFromFlatpakRef.OnClicked += (_, _) => { _ = InstallFromFlatpakRef(); };
@@ -332,18 +329,23 @@ public class FlatpakInstall(
             _overlayLicenseLabel.SetText(obj.ProjectLicense);
             _overlaySummaryLabel.SetText(obj.Summary);
             _overlayDescriptionLabel.SetText(obj.Description);
-
+            
             var result = unprivilegedOperationService
                 .GetFlatpakAppDataAsync(obj.Remotes.FirstOrDefault()?.Name ?? String.Empty, obj.Id, "stable").Result;
 
             var installed = unprivilegedOperationService.ListFlatpakPackages().Result;
 
-            if (installed.Any(p => p.Id == obj.Id))
+            if  (installed.Any(p => p.Id == obj.Id))
             {
-                _overlayInstallButton.SetVisible(false);
-                _overlayRunButton.SetVisible(true);
+                _overlayInstallButton.SetSensitive(false);
+                _overlayInstallButton.Label = "Installed";
             }
-
+            else
+            {
+                _overlayInstallButton.SetSensitive(true);
+                _overlayInstallButton.Label = "Install";
+            }
+            
             _overlaySizeLabel.SetText(SizeHelpers.FormatSize((long)result));
 
             SetUrlLinks(obj.Urls);
@@ -709,8 +711,7 @@ public class FlatpakInstall(
                 }
                 else
                 {
-                    _overlayInstallButton.SetVisible(false);
-                    _overlayRunButton.SetVisible(true);
+                    _overlayInstallButton.SetSensitive(false);
 
                     var args = new ToastMessageEventArgs(
                         $"Installed Flatpak"
@@ -760,8 +761,7 @@ public class FlatpakInstall(
 
             if (result.Success)
             {
-                _overlayInstallButton.SetVisible(false);
-                _overlayRunButton.SetVisible(true);
+                _overlayInstallButton.SetSensitive(false);
 
                 var args = new ToastMessageEventArgs(
                     $"Installed Flatpak"
@@ -780,32 +780,6 @@ public class FlatpakInstall(
         finally
         {
             lockoutService.Hide();
-        }
-    }
-
-    private async Task RunSelectedAsync()
-    {
-        try
-        {
-            var result = await unprivilegedOperationService.RunFlatpakName(_selectedPackage.Id);
-
-            if (!result.Success)
-            {
-                var args = new ToastMessageEventArgs(
-                    $"Failed to start Flatpak "
-                );
-                genericQuestionService.RaiseToastMessage(args);
-                Console.WriteLine($"Failed to start Flatpak {_selectedPackage.Id}: {result.Error}");
-            }
-        }
-        finally
-        {
-            lockoutService.Hide();
-
-            var args = new ToastMessageEventArgs(
-                $"Flatpak Started"
-            );
-            genericQuestionService.RaiseToastMessage(args);
         }
     }
 
