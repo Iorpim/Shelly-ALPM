@@ -776,7 +776,14 @@ public class AlpmManager(string configPath = "/etc/pacman.conf") : IDisposable, 
         if (_handle == IntPtr.Zero) Initialize();
         var dbPtr = GetLocalDb(_handle);
         var pkgPtr = DbGetPkgCache(dbPtr);
-        return AlpmPackage.FromList(pkgPtr).Select(p => p.ToDto()).ToList();
+        var packages = AlpmPackage.FromList(pkgPtr).Select(p => p.ToDto()).ToList();
+
+        if (!_showHiddenPackages)
+        {
+            packages.RemoveAll(x => _config.IgnorePkg.Contains(x.Name));
+        }
+
+        return packages;
     }
 
     public List<AlpmPackageDto> GetForeignPackages()
@@ -859,6 +866,11 @@ public class AlpmManager(string configPath = "/etc/pacman.conf") : IDisposable, 
             }
 
             currentPtr = node.Next;
+        }
+
+        if (!_showHiddenPackages)
+        {
+            packages.RemoveAll(x => _config.IgnorePkg.Contains(x.Name));
         }
 
         return packages;

@@ -276,9 +276,10 @@ public class UnprivilegedOperationService : IUnprivilegedOperationService
         return 0;
     }
 
-    public async Task<List<AlpmPackageUpdateDto>> CheckForStandardApplicationUpdates()
+    public async Task<List<AlpmPackageUpdateDto>> CheckForStandardApplicationUpdates(bool showHidden = false)
     {
-        var result = await ExecuteUnprivilegedCommandAsync("Get Available Updates", "list-updates --json");
+        var args = showHidden ? "list-updates --json --show-hidden" : "list-updates --json";
+        var result = await ExecuteUnprivilegedCommandAsync("Get Available Updates", args);
         try
         {
             var lines = result.Output.Split('\n', StringSplitOptions.RemoveEmptyEntries);

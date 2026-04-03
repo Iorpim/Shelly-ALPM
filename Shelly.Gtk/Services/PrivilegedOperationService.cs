@@ -267,9 +267,11 @@ public class PrivilegedOperationService : IPrivilegedOperationService
         }
     }
 
-    public async Task<List<AlpmPackageDto>> GetAvailablePackagesAsync()
+    public async Task<List<AlpmPackageDto>> GetAvailablePackagesAsync(bool showHidden = false)
     {
-        var result = await ExecuteCommandAsync("list-available", "--json");
+        var result = showHidden
+            ? await ExecuteCommandAsync("list-available", "--json", "--show-hidden")
+            : await ExecuteCommandAsync("list-available", "--json");
 
         if (!result.Success || string.IsNullOrWhiteSpace(result.Output))
         {
@@ -303,9 +305,11 @@ public class PrivilegedOperationService : IPrivilegedOperationService
         }
     }
 
-    public async Task<List<AlpmPackageDto>> GetInstalledPackagesAsync()
+    public async Task<List<AlpmPackageDto>> GetInstalledPackagesAsync(bool showHidden = false)
     {
-        var result = await ExecuteCommandAsync("list-installed", "--json");
+        var result = showHidden
+            ? await ExecuteCommandAsync("list-installed", "--json", "--show-hidden")
+            : await ExecuteCommandAsync("list-installed", "--json");
 
         if (!result.Success || string.IsNullOrWhiteSpace(result.Output))
         {
@@ -339,9 +343,11 @@ public class PrivilegedOperationService : IPrivilegedOperationService
         }
     }
 
-    public async Task<List<AurPackageDto>> GetAurInstalledPackagesAsync()
+    public async Task<List<AurPackageDto>> GetAurInstalledPackagesAsync(bool showHidden = false)
     {
-        var result = await ExecuteCommandAsync("aur list-installed", "--json");
+        var result = showHidden
+            ? await ExecuteCommandAsync("aur list-installed", "--json", "--show-hidden")
+            : await ExecuteCommandAsync("aur list-installed", "--json");
 
         if (!result.Success || string.IsNullOrWhiteSpace(result.Output))
         {
@@ -374,9 +380,11 @@ public class PrivilegedOperationService : IPrivilegedOperationService
         }
     }
 
-    public async Task<List<AurUpdateDto>> GetAurUpdatePackagesAsync()
+    public async Task<List<AurUpdateDto>> GetAurUpdatePackagesAsync(bool showHidden = false)
     {
-        var result = await ExecuteCommandAsync("aur list-updates", "--json");
+        var result = showHidden
+            ? await ExecuteCommandAsync("aur list-updates", "--json", "--show-hidden")
+            : await ExecuteCommandAsync("aur list-updates", "--json");
 
         if (!result.Success || string.IsNullOrWhiteSpace(result.Output))
         {
