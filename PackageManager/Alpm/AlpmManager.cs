@@ -1016,7 +1016,7 @@ public class AlpmManager(string configPath = "/etc/pacman.conf") : IDisposable, 
         List<string> optDependList = [];
         foreach (var pkgPtr in pkgPtrs)
         {
-            var pkg = Marshal.PtrToStructure<AlpmPackage>(pkgPtr);
+            var pkg = new AlpmPackage(pkgPtr);
             if (pkg != null)
             {
                 optDependList.AddRange(pkg.OptDepends);
