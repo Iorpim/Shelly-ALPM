@@ -419,6 +419,13 @@ public class HomeWindow(
         }
     }
 
+    private static string StripAnsiAndMarkup(string input)
+    {
+        var noAnsi = System.Text.RegularExpressions.Regex.Replace(input, @"\x1B\[[^@-~]*[@-~]", "");
+        var noMarkup = System.Text.RegularExpressions.Regex.Replace(noAnsi, @"\[\/?[a-zA-Z0-9_ ]*\]", "");
+        return noMarkup.Trim();
+    }
+
     private async Task ExecuteCacheClean(int keep, bool uninstalledOnly)
     {
         try
@@ -426,9 +433,18 @@ public class HomeWindow(
             lockoutService.Show("Cleaning package cache...");
             var result = await privilegedOperationService.RunCacheCleanAsync(keep, uninstalledOnly);
 
-            var message = result.Success
-                ? "Package cache cleaned successfully"
-                : $"Cache clean failed: {result.Error}";
+            string message;
+            if (result.Success)
+            {
+                var output = StripAnsiAndMarkup(result.Output ?? "");
+                message = string.IsNullOrWhiteSpace(output)
+                    ? "Package cache cleaned successfully"
+                    : output;
+            }
+            else
+            {
+                message = $"Cache clean failed: {result.Error}";
+            }
 
             var toastArgs = new ToastMessageEventArgs(message);
             genericQuestionService.RaiseToastMessage(toastArgs);
