@@ -132,7 +132,11 @@ public class HomeWindow(
         _archNewsButton.OnRealize += (sender, args) => { _ = LoadArchNews(_cts.Token); };
 
         _ = LoadUpdatesPanel(_updatesListBox!, _cts.Token);
-
+        GLib.Functions.TimeoutAdd(200, 180000, () =>
+        {
+            _ = LoadUpdatesPanel(_updatesListBox!, _cts.Token);
+            return true;
+        });
         return _overlay;
     }
 
