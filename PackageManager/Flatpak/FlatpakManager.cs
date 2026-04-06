@@ -1400,6 +1400,11 @@ public class FlatpakManager : IDisposable
     /// </summary>
     public List<FlatpakPackageDto> GetPackagesWithUpdates()
     {
+        if (!NativeResolver.IsLibraryAvailable(FlatpakReference.LibName))
+        {
+            return [];
+        }
+
         var packages = new List<FlatpakPackageDto>();
 
         var installationsPtr = FlatpakReference.GetSystemInstallations(IntPtr.Zero, out IntPtr error);
