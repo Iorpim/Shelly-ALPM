@@ -31,14 +31,14 @@ source=(
     "Shelly-ALPM-linux-x64-${pkgver}.tar.gz::https://github.com/ZoeyErinBauer/Shelly-ALPM/releases/download/v${pkgver}/Shelly-ALPM-linux-x64.tar.gz"
 )
 
-sha256sums=('SKIP')
+sha256sums=('2f3d3ba4813da5b0b1f798a1f279366bfc42f2c841172797f0d18b34bdb7f84d')
 
 package() {
   # Install Shelly.Gtk binary
   install -Dm755 "$srcdir/shelly-ui" "$pkgdir/usr/bin/shelly-ui"
 
   # Install Shelly-Notifications binary
-  install -Dm755 "$srcdir/shelly-notifications" "$pkgdir/usr/bin/shelly-notifications"
+  install -Dm755 "$srcdir/Shelly-Notifications" "$pkgdir/usr/bin/shelly-notifications"
 
   # Install Shelly-CLI binary
   install -Dm755 "$srcdir/shelly" "$pkgdir/usr/bin/shelly"
@@ -85,9 +85,9 @@ NoDisplay=true
 EOF
 
   # Install icon
-  install -Dm644 "$srcdir/shellylogo.png" "$pkgdir/usr/share/icons/hicolor/256x256/apps/shelly.png"
-  install -Dm644 "$srcdir/flatpak-symbolic.svg" "$pkgdir/usr/share/icons/hicolor/symbolic/apps/flatpak-symbolic.svg"
-  install -Dm644 "$srcdir/arch-symbolic.svg" "$pkgdir/usr/share/icons/hicolor/symbolic/apps/arch-symbolic.svg"
+  install -Dm644 "$srcdir/Assets/shellylogo.png" "$pkgdir/usr/share/icons/hicolor/256x256/apps/shelly.png"
+  install -Dm644 "$srcdir/Assets/svg/flatpak-symbolic.svg" "$pkgdir/usr/share/icons/hicolor/symbolic/apps/flatpak-symbolic.svg"
+  install -Dm644 "$srcdir/Assets/svg/arch-symbolic.svg" "$pkgdir/usr/share/icons/hicolor/symbolic/apps/arch-symbolic.svg"
 
   # Install fish shell completions
   install -Dm644 "$srcdir/shelly.fish" "$pkgdir/usr/share/fish/vendor_completions.d/shelly.fish"
