@@ -53,6 +53,7 @@ public class AurPackageManager(string? configPath = null)
     private List<string> _availablePackages = [];
     private readonly HashSet<string> _currentlyInstallingAurDeps = new();
     private bool _useChroot = false;
+    private bool _noCheck = true;
     private string _chrootPath;
 
     public event EventHandler<PackageProgressEventArgs>? PackageProgress;
@@ -61,7 +62,8 @@ public class AurPackageManager(string? configPath = null)
     public event EventHandler<AlpmProgressEventArgs>? Progress;
 
     public async Task Initialize(bool root = false, bool useTempPath = false, bool useChroot = false,
-        string chrootPath = "/var/lib/shelly/chroot", string tempPath = "", bool showHiddenPackages = false)
+        string chrootPath = "/var/lib/shelly/chroot", string tempPath = "", bool showHiddenPackages = false,
+        bool noCheck = true)
     {
         _alpm = configPath is null ? new AlpmManager() : new AlpmManager(configPath);
         _alpm.Initialize(root, useTempPath: useTempPath, tempPath: tempPath, showHiddenPackages: showHiddenPackages);
@@ -71,6 +73,7 @@ public class AurPackageManager(string? configPath = null)
         _availablePackages = _alpm.GetAvailablePackages().Select(x => x.Name).ToList();
         _useChroot = useChroot;
         _chrootPath = chrootPath;
+        _noCheck = noCheck;
         // Import caches from other AUR helpers (paru, yay) for installed foreign packages
         await ImportOtherAurHelperCaches();
     }
@@ -330,9 +333,14 @@ public class AurPackageManager(string? configPath = null)
                 Message = "Building package with makepkg"
             });
             var pkgbuildInfo = PkgbuildParser.Parse(System.IO.Path.Combine(tempPath, "PKGBUILD"));
-            var depends = pkgbuildInfo.Depends.Select(x => x.Trim()).ToList();
-            var makeDepends = pkgbuildInfo.MakeDepends.Select(x => x.Trim()).ToList();
-            var allDeps = depends.Concat(makeDepends).Distinct().ToList();
+            var checkDepends = _noCheck ? new List<string>()
+                : pkgbuildInfo.CheckDepends.Select(x => x.Trim()).ToList();
+            var allDeps = pkgbuildInfo.Depends
+                .Concat(pkgbuildInfo.MakeDepends)
+                .Concat(checkDepends)
+                .Select(x => x.Trim())
+                .Distinct()
+                .ToList();
             var depsToInstall = allDeps.Where(x => !_alpm.IsDependencySatisfiedByInstalled(x)).ToList();
             Console.Error.WriteLine($"dependency count {depsToInstall.Count}");
             var alpmPackages = new List<string>();
@@ -554,9 +562,14 @@ public class AurPackageManager(string? configPath = null)
         });
 
         var pkgbuildInfo = PkgbuildParser.Parse(System.IO.Path.Combine(tempPath, "PKGBUILD"));
-        var depends = pkgbuildInfo.Depends.Select(x => x.Trim()).ToList();
-        var makeDepends = pkgbuildInfo.MakeDepends.Select(x => x.Trim()).ToList();
-        var allDeps = depends.Concat(makeDepends).Distinct().ToList();
+        var checkDepends = _noCheck ? new List<string>()
+            : pkgbuildInfo.CheckDepends.Select(x => x.Trim()).ToList();
+        var allDeps = pkgbuildInfo.Depends
+            .Concat(pkgbuildInfo.MakeDepends)
+            .Concat(checkDepends)
+            .Select(x => x.Trim())
+            .Distinct()
+            .ToList();
         var depsToInstall = allDeps.Where(x => !_alpm.IsDependencySatisfiedByInstalled(x)).ToList();
         var alpmPackages = new List<string>();
         var aurPackages = new List<string>();
@@ -586,7 +599,7 @@ public class AurPackageManager(string? configPath = null)
             EnsureChrootExists();
         }
 
-        var buildProcess = CreateBuildProcess(tempPath, "--noconfirm");
+        var buildProcess = CreateBuildProcess(tempPath, "--noconfirm" + (_noCheck ? " --nocheck" : ""));
         buildProcess.OutputDataReceived += (sender, e) =>
         {
             if (!string.IsNullOrEmpty(e.Data))
@@ -995,9 +1008,14 @@ public class AurPackageManager(string? configPath = null)
                 Message = "Building package with makepkg"
             });
             var pkgbuildInfo = PkgbuildParser.Parse(System.IO.Path.Combine(tempPath, "PKGBUILD"));
-            var depends = pkgbuildInfo.Depends.Select(x => x.Trim()).ToList();
-            var makeDepends = pkgbuildInfo.MakeDepends.Select(x => x.Trim()).ToList();
-            var allDeps = depends.Concat(makeDepends).Distinct().ToList();
+            var checkDepends = _noCheck ? new List<string>()
+                : pkgbuildInfo.CheckDepends.Select(x => x.Trim()).ToList();
+            var allDeps = pkgbuildInfo.Depends
+                .Concat(pkgbuildInfo.MakeDepends)
+                .Concat(checkDepends)
+                .Select(x => x.Trim())
+                .Distinct()
+                .ToList();
             var depsToInstall = allDeps.Where(x => !_alpm.IsDependencySatisfiedByInstalled(x)).ToList();
             var alpmPackages = new List<string>();
             var aurPackages = new List<string>();
@@ -1140,8 +1158,9 @@ public class AurPackageManager(string? configPath = null)
     }
 
     private System.Diagnostics.Process CreateBuildProcess(string tempPath,
-        string makepkgArgs = "-f -c --noconfirm --skippgpcheck")
+        string? makepkgArgs = null)
     {
+        makepkgArgs ??= "-f -c --noconfirm --skippgpcheck" + (_noCheck ? " --nocheck" : "");
         if (_useChroot)
         {
             return new System.Diagnostics.Process

@@ -168,11 +168,14 @@ public class PkgbuildInfo
     public List<string> Md5Sums { get; set; } = new();
 
     /// <summary>
-    /// Gets all build-time dependencies (depends + makedepends + checkdepends).
+    /// Gets all build-time dependencies (depends + makedepends + optionally checkdepends).
     /// </summary>
-    public List<string> GetAllBuildDependencies()
+    public List<string> GetAllBuildDependencies(bool includeCheckDepends = false)
     {
-        return Depends.Concat(MakeDepends).Concat(CheckDepends).Distinct().ToList();
+        var deps = Depends.Concat(MakeDepends);
+        if (includeCheckDepends)
+            deps = deps.Concat(CheckDepends);
+        return deps.Distinct().ToList();
     }
 
     /// <summary>
