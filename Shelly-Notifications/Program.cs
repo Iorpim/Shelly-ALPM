@@ -19,23 +19,6 @@ try
     const string shellyNotificationsService = "org.shelly.Notifications";
     await connection.RequestNameAsync(shellyNotificationsService);
 
-    connection.AddMethodHandler(new ShellyUiReceiver(() =>
-    {
-        configReader.Refresh();
-        forceCheck = true;
-        try
-        {
-            delayCts?.Cancel();
-        }
-        catch (ObjectDisposedException)
-        {
-        }
-    }));
-
-    var cts = new CancellationTokenSource();
-    var token = cts.Token;
-
-
     var trayHandler = new StatusNotifierItemHandler(connection);
     connection.AddMethodHandler(trayHandler);
 
@@ -72,6 +55,32 @@ try
         Environment.Exit(0);
     };
     connection.AddMethodHandler(menuHandler);
+
+    connection.AddMethodHandler(new ShellyUiReceiver(() =>
+    {
+        configReader.Refresh();
+        forceCheck = true;
+        try
+        {
+            delayCts?.Cancel();
+        }
+        catch (ObjectDisposedException)
+        {
+        }
+    }, () =>
+    {
+        forceCheck = true;
+        try
+        {
+            delayCts?.Cancel();
+        }
+        catch (ObjectDisposedException)
+        {
+        }
+    }));
+
+    var cts = new CancellationTokenSource();
+    var token = cts.Token;
 
     _ = Task.Run(async () =>
     {
