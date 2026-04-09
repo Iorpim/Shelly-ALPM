@@ -330,35 +330,34 @@ public class PackageInstall(
 
             foreach (var item in items)
             {
-                var chipBox = Box.New(Orientation.Horizontal, 4);
-                chipBox.Valign = Align.Center;
-
-                var chip = Label.New(item);
-                chip.AddCssClass("package-chip");
-                chip.Selectable = true;
-                chip.Ellipsize = Pango.EllipsizeMode.End;
-                chip.MaxWidthChars = 25;
-
                 if (isOptional)
                 {
-                    chip.Wrap = true;
-                    chip.WrapMode = Pango.WrapMode.WordChar;
-                    chip.Xalign = 0;
-
                     var optDepName = item.Split(':').First().Trim();
                     var isInstalled = _installedPackageNames.Contains(optDepName);
 
-                    var installedIcon = Image.NewFromIconName("object-select-symbolic");
-                    installedIcon.AddCssClass("success");
-                    installedIcon.PixelSize = 16;
-                    installedIcon.Visible = isInstalled;
+                    var escapedItem = GLib.Functions.MarkupEscapeText(item, -1);
+                    var displayText = isInstalled
+                        ? $"<span foreground='#9a9996'>✔</span> {escapedItem}"
+                        : escapedItem!;
 
-                    chipBox.Append(chip);
-                    chipBox.Append(installedIcon);
-                    flowBox.Append(chipBox);
+                    var chip = Label.New(string.Empty);
+                    chip.SetMarkup($"<span size='small'>{displayText}</span>");
+                    chip.AddCssClass("package-chip");
+                    chip.Selectable = true;
+                    chip.Ellipsize = Pango.EllipsizeMode.End;
+                    chip.MaxWidthChars = 25;
+                    chip.Wrap = true;
+                    chip.WrapMode = Pango.WrapMode.WordChar;
+                    chip.Xalign = 0;
+                    flowBox.Append(chip);
                 }
                 else
                 {
+                    var chip = Label.New(item);
+                    chip.AddCssClass("package-chip");
+                    chip.Selectable = true;
+                    chip.Ellipsize = Pango.EllipsizeMode.End;
+                    chip.MaxWidthChars = 25;
                     flowBox.Append(chip);
                 }
             }
