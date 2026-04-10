@@ -113,20 +113,22 @@ public class AurPackageManager(string? configPath = null)
     public async Task<List<AurPackageDto>> SearchPackages(string query)
     {
         var searchResponse = await _aurSearchManager.SearchAsync(query);
-        var suggestResponse = await _aurSearchManager.SuggestAsync(query);
-        var suggestByBaseNameResponse = await _aurSearchManager.SuggestByPackageBaseNamesAsync(query);
+        var results = searchResponse.Results ?? [];
         
-        var allNames = searchResponse.Results.Select(x => x.Name)
-            .Concat(suggestResponse)
-            .Concat(suggestByBaseNameResponse)
-            .Distinct()
+        // top 100 sorted by pop to avoid ddos AUR with.
+        var topResults = results
+            .OrderByDescending(x => x.Popularity)
+            .Take(100)
             .ToList();
 
-        if (allNames.Count == 0) return [];
-        
-        var fullInfoResponse = await _aurSearchManager.GetInfoAsync(allNames);
+        if (topResults.Count == 0)
+        {
+            return [];
+        }
 
-        return fullInfoResponse.Results;
+        // get meta data for those 100
+        var infoResponse = await _aurSearchManager.GetInfoAsync(topResults.Select(x => x.Name));
+        return infoResponse.Results ?? [];
     }
 
     public async Task<List<AurUpdateDto>> GetPackagesNeedingUpdate()
