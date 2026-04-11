@@ -172,6 +172,7 @@ public class AlpmManager(string configPath = "/etc/pacman.conf") : IDisposable, 
 
         if (!string.IsNullOrEmpty(resolvedArch))
         {
+            Console.Error.WriteLine($"[DEBUG_LOG] Resolved Architecture: {resolvedArch}");
             AddArchitecture(_handle, resolvedArch);
             AddArchitecture(_handle, "any");
         }
@@ -202,6 +203,7 @@ public class AlpmManager(string configPath = "/etc/pacman.conf") : IDisposable, 
         }
 
 
+        List<string> registeredArchitectures = [];
         foreach (var repo in _config.Repos)
         {
             var effectiveSigLevel = repo.SigLevel is AlpmSigLevel.None or AlpmSigLevel.UseDefault
@@ -216,13 +218,23 @@ public class AlpmManager(string configPath = "/etc/pacman.conf") : IDisposable, 
                 continue;
             }
 
+            
             foreach (var server in repo.Servers)
             {
                 var archSuffixMatch = Regex.Match(server, @"\$arch([^/]+)");
                 if (archSuffixMatch.Success)
                 {
                     string suffix = archSuffixMatch.Groups[1].Value;
-                    AddArchitecture(_handle, resolvedArch + suffix);
+                    var archLevel = int.Parse(archSuffixMatch.Groups[1].Value.Split('v')[1]);
+                    for (var i = archLevel; i >= 2; i--)
+                    {
+                        if(registeredArchitectures.Contains(resolvedArch + $"_v{i}")) continue;
+                        AddArchitecture(_handle, resolvedArch + $"_v{i}");
+                        Console.Error.WriteLine($"[DEBUG_LOG] Registering Architecture: {resolvedArch + $"_v{i}"}");
+                        registeredArchitectures.Add(resolvedArch + $"_v{i}");
+                    }
+                    //AddArchitecture(_handle, resolvedArch + suffix);
+                    
                     //Commented out logs because it's too much noise. Uncomment if needed
                     //Console.Error.WriteLine($"[DEBUG_LOG] Found architecture suffix: {suffix}");
                     //Console.Error.WriteLine($"[DEBUG_LOG] Registering Architecture: {resolvedArch + suffix}");

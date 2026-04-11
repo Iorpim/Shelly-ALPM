@@ -218,6 +218,7 @@ public class PackageInstall(
         {
             iconImage.SetFromIconName("package-x-generic");
         }
+
         headerBox.Append(iconImage);
 
         var nameLabel = Label.New(pkg.Name);
@@ -592,7 +593,7 @@ public class PackageInstall(
     {
         if (obj is not AlpmPackageGObject pkgObj || pkgObj.Package == null) return false;
 
-        if (_selectedGroup != "Any" && !pkgObj.Package.Groups.Contains(_selectedGroup))
+        if (_selectedGroup != "Any" && !(pkgObj.Package.Groups?.Contains(_selectedGroup) ?? false))
         {
             return false;
         }
@@ -600,9 +601,10 @@ public class PackageInstall(
         if (string.IsNullOrWhiteSpace(_searchText))
             return true;
 
-        return pkgObj.Package.Name.Contains(_searchText, StringComparison.OrdinalIgnoreCase) ||
-               pkgObj.Package.Description.Contains(_searchText, StringComparison.OrdinalIgnoreCase);
+        return (pkgObj.Package.Name?.Contains(_searchText, StringComparison.OrdinalIgnoreCase) ?? false) ||
+               (pkgObj.Package.Description?.Contains(_searchText, StringComparison.OrdinalIgnoreCase) ?? false);
     }
+
 
     private async Task InstallSelectedAsync()
     {
