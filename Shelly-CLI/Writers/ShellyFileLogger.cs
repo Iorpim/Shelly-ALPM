@@ -17,7 +17,7 @@ public class ShellyFileLogger : TextWriter
     private string? _lastLoggedLine;
     
     private readonly List<string> _tuiFrameBuffer = [];
-    private bool _inTuiFrame = false;
+    private bool _inTuiFrame;
     
     private static readonly Regex AnsiEscape = new(@"\x1B\[[\?0-9;]*[a-zA-Z]", RegexOptions.Compiled);
     private static readonly Regex[] NoisePatterns =
@@ -55,11 +55,9 @@ public class ShellyFileLogger : TextWriter
 
             cells.AddRange(lineCells);
         }
-
         if (cells.Count > 0)
             WriteToLog(string.Join(" | ", cells));
     }
-    
     
     private void HandleLogLine(string raw)
     {
