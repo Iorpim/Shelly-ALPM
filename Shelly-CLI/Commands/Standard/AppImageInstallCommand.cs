@@ -42,36 +42,148 @@ public class AppImageInstallCommand : AsyncCommand<AppImageInstallSettings>
         {
             return await InstallAppImage(settings);
         }
-        
+
         return 0;
     }
 
-    private static Task<int> InstallAppImage(AppImageInstallSettings settings)
+    private static async Task<int> InstallAppImage(AppImageInstallSettings settings)
     {
-        var filePath = settings.PackageLocation!;
+        var filePath = Path.GetFullPath(settings.PackageLocation!);
+        var appName = Path.GetFileNameWithoutExtension(filePath);
+        var workingDir = Path.Combine(Path.GetTempPath(), "Shelly", appName);
+        
+        if (Directory.Exists(workingDir)) Directory.Delete(workingDir, true);
+        Directory.CreateDirectory(workingDir);
 
-        var installDir = Path.Combine("/opt/shelly");
+        const string installDir = "/opt/shelly";
         Directory.CreateDirectory(installDir);
 
-        var appName = Path.GetFileNameWithoutExtension(filePath);
-        var destPath = Path.Combine(installDir, appName + ".AppImage");
-        File.Copy(filePath, destPath, overwrite: true);
-        AnsiConsole.MarkupLine($"[green]Copied appimage to: {destPath.EscapeMarkup()}[/]");
+        AnsiConsole.MarkupLine($"[blue]Extracting AppImage...[/]");
+        SetFilePermissions(filePath, "a+x");
 
-        SetFilePermissions(destPath, "a+x");
-        AnsiConsole.MarkupLine($"[green]Setting file permissions to: a+x[/]");
+        var extractProcess = Process.Start(new ProcessStartInfo
+        {
+            FileName = filePath,
+            Arguments = "--appimage-extract",
+            WorkingDirectory = workingDir,
+            RedirectStandardOutput = false,
+            RedirectStandardError = false,
+            UseShellExecute = false,
+            CreateNoWindow = true
+        });
+        await extractProcess!.WaitForExitAsync();
 
-        Console.WriteLine("Creating desktop entry...");
-        CreateDesktopEntry(
-            appName: appName,
-            executablePath: destPath,
-            comment: $"{appName} - Installed from {appName}",
-            terminal: false,
-            categories: "Utility;"
-        );
-        AnsiConsole.MarkupLine($"[green]Desktop Entries Created[/]");
+        var squashfsRoot = Path.Combine(workingDir, "squashfs-root");
+        if (!Directory.Exists(squashfsRoot))
+        {
+            AnsiConsole.MarkupLine("[red]Error: Failed to extract AppImage.[/]");
+            return 1;
+        }
 
-        return Task.FromResult(0);
+        var desktopFile = Directory.GetFiles(squashfsRoot, "*.desktop", SearchOption.TopDirectoryOnly).FirstOrDefault();
+        if (desktopFile == null)
+        {
+            AnsiConsole.MarkupLine("[yellow]Warning: No .desktop file found in AppImage.[/]");
+        }
+
+        string? iconName = null;
+        if (desktopFile != null)
+        {
+            var lines = await File.ReadAllLinesAsync(desktopFile);
+            var iconLine = lines.FirstOrDefault(l => l.StartsWith("Icon="));
+            if (iconLine != null)
+            {
+                iconName = iconLine.Split('=', 2)[1].Trim();
+            }
+        }
+
+        string? iconPath = null;
+        if (!string.IsNullOrEmpty(iconName))
+        {
+            iconPath = Directory.GetFiles(squashfsRoot, $"{iconName}.*", SearchOption.AllDirectories).FirstOrDefault();
+        }
+        
+        if (iconPath == null)
+        {
+            iconPath = Path.Combine(squashfsRoot, ".DirIcon");
+            if (!File.Exists(iconPath)) iconPath = null;
+        }
+
+        var finalIconPath = "application-x-executable";
+        if (iconPath != null)
+        {
+            const string iconDir = "/usr/share/icons/hicolor/scalable/apps";
+            Directory.CreateDirectory(iconDir);
+            
+            var extension = Path.GetExtension(iconPath);
+            if (string.IsNullOrEmpty(extension) || extension == ".DirIcon") extension = ".svg"; // AppImages often use svg for .DirIcon
+
+            var destIconName = $"{CleanInvalidNames(appName).ToLower()}{extension}";
+            var destIconPath = Path.Combine(iconDir, destIconName);
+            
+            try 
+            {
+                File.Copy(iconPath, destIconPath, true);
+                finalIconPath = destIconName;
+                AnsiConsole.MarkupLine($"[green]Exported icon to: {destIconPath}[/]");
+            }
+            catch (Exception ex)
+            {
+                AnsiConsole.MarkupLine($"[yellow]Warning: Could not copy icon: {ex.Message}[/]");
+            }
+        }
+
+        var destAppImagePath = Path.Combine(installDir, $"{appName}.AppImage");
+        File.Copy(filePath, destAppImagePath, true);
+        SetFilePermissions(destAppImagePath, "a+x");
+        AnsiConsole.MarkupLine($"[green]Installed AppImage to: {destAppImagePath}[/]");
+
+        if (desktopFile != null)
+        {
+            try
+            {
+                var desktopContent = await File.ReadAllLinesAsync(desktopFile);
+                var patchedContent = new StringBuilder();
+                foreach (var line in desktopContent)
+                {
+                    if (line.StartsWith("Exec="))
+                    {
+                        patchedContent.AppendLine($"Exec={destAppImagePath}");
+                    }
+                    else if (line.StartsWith("Icon="))
+                    {
+                        patchedContent.AppendLine($"Icon={finalIconPath}");
+                    }
+                    else
+                    {
+                        patchedContent.AppendLine(line);
+                    }
+                }
+
+                const string desktopDir = "/usr/share/applications";
+                Directory.CreateDirectory(desktopDir);
+                var cleanName = CleanInvalidNames(appName);
+                var desktopFilePath = Path.Combine(desktopDir, $"{cleanName}.desktop");
+                
+                await File.WriteAllTextAsync(desktopFilePath, patchedContent.ToString());
+                SetFilePermissions(desktopFilePath, "644");
+                UpdateDesktopDatabase(desktopDir);
+                AnsiConsole.MarkupLine($"[green]Installed original desktop entry: {desktopFilePath}[/]");
+            }
+            catch (Exception ex)
+            {
+                AnsiConsole.MarkupLine($"[yellow]Warning: Could not install original desktop entry: {ex.Message}[/]");
+                CreateDesktopEntry(appName, destAppImagePath, icon: finalIconPath);
+            }
+        }
+        else
+        {
+            CreateDesktopEntry(appName, destAppImagePath, icon: finalIconPath);
+        }
+        
+        try { Directory.Delete(workingDir, true); } catch { /* ignore */ }
+
+        return 0;
     }
 
     private static Task<bool> IsAppImage(string filePath)
@@ -88,8 +200,8 @@ public class AppImageInstallCommand : AsyncCommand<AppImageInstallSettings>
             {
                 FileName = "chmod",
                 Arguments = $"{permissions} \"{filePath}\"",
-                RedirectStandardOutput = true,
-                RedirectStandardError = true,
+                RedirectStandardOutput = false,
+                RedirectStandardError = false,
                 UseShellExecute = false,
                 CreateNoWindow = true
             });
@@ -156,8 +268,8 @@ public class AppImageInstallCommand : AsyncCommand<AppImageInstallSettings>
             {
                 FileName = "update-desktop-database",
                 Arguments = $"\"{desktopDir}\"",
-                RedirectStandardOutput = true,
-                RedirectStandardError = true,
+                RedirectStandardOutput = false,
+                RedirectStandardError = false,
                 UseShellExecute = false,
                 CreateNoWindow = true
             });
