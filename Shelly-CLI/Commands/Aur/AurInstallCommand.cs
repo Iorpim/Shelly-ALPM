@@ -32,7 +32,7 @@ public class AurInstallCommand : AsyncCommand<AurInstallSettings>
 
         AnsiConsole.MarkupLine($"[yellow]AUR packages to install:[/] {string.Join(", ", packageList.Select(p => p.EscapeMarkup()))}");
 
-        if (!Program.IsUiMode)
+        if (!settings.NoConfirm)
         {
             if (!AnsiConsole.Confirm("Do you want to proceed?"))
             {

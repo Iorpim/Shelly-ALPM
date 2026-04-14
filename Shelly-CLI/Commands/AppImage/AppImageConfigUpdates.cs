@@ -4,6 +4,8 @@ using Spectre.Console.Cli;
 
 namespace Shelly_CLI.Commands.Standard;
 
+
+// No confirm intentionally not implemented here as user interaction is required.
 public class AppImageConfigUpdates : AsyncCommand<AppImageConfigUpdatesSettings>
 {
     public override async Task<int> ExecuteAsync(CommandContext context, AppImageConfigUpdatesSettings settings)
