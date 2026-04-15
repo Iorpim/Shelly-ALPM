@@ -5,6 +5,7 @@ using System.Diagnostics;
 using System.Diagnostics.CodeAnalysis;
 using System.IO;
 using System.Linq;
+using System.Net;
 using System.Net.Http;
 using System.Runtime.InteropServices;
 using System.Text.RegularExpressions;
@@ -31,12 +32,36 @@ public class AlpmManager(string configPath = "/etc/pacman.conf") : IDisposable, 
     private string _configPath = configPath;
     private PacmanConf _config;
     private IntPtr _handle = IntPtr.Zero;
-    private static readonly HttpClient HttpClient = new();
+
+    private static SocketsHttpHandler _socketsHttpHandler = new()
+    {
+        PooledConnectionLifetime = TimeSpan.FromMinutes(5),
+        PooledConnectionIdleTimeout = TimeSpan.FromMinutes(2),
+        MaxConnectionsPerServer = 10,
+        AutomaticDecompression = DecompressionMethods.All,
+        AllowAutoRedirect = true,
+        MaxAutomaticRedirections = 10,
+        ConnectTimeout = TimeSpan.FromSeconds(30),
+        EnableMultipleHttp2Connections = true,
+        EnableMultipleHttp3Connections = true,
+    };
+
+    private static readonly HttpClient DownloadClient = new(_socketsHttpHandler, disposeHandler: false)
+    {
+        Timeout = TimeSpan.FromMinutes(5),
+        DefaultRequestHeaders =
+        {
+            { "User-Agent", "Shelly/2.0 (compatible)" }
+        },
+    };
+
+    private HashSet<string> _preDownloadedFiles = new();
+
     private AlpmFetchCallback _fetchCallback;
     private AlpmEventCallback _eventCallback;
     private AlpmQuestionCallback _questionCallback;
     private AlpmProgressCallback? _progressCallback;
-    private int _parallelDownloads = 1;
+    private int _parallelDownloads = 10;
     private bool _showHiddenPackages = false;
     private bool _isPackageDownload;
 
@@ -490,6 +515,12 @@ public class AlpmManager(string configPath = "/etc/pacman.conf") : IDisposable, 
                 fileName = Path.GetFileName(url);
             }
 
+            if (!_isPackageDownload && _preDownloadedFiles.Remove(fileName))
+            {
+                Console.Error.WriteLine($"[DEBUG_LOG] File {fileName} already downloaded, skipping");
+                return 0;
+            }
+
             // Construct full destination path
             string localpath;
             if (!string.IsNullOrEmpty(localpathDir))
@@ -544,19 +575,7 @@ public class AlpmManager(string configPath = "/etc/pacman.conf") : IDisposable, 
         try
         {
             Console.Error.WriteLine($"[Shelly][DEBUG_LOG] Downloading {fullUrl} to {localpath}");
-
-            handler = new SocketsHttpHandler
-            {
-                PooledConnectionLifetime = TimeSpan.FromMinutes(2),
-                AutomaticDecompression = System.Net.DecompressionMethods.All,
-                AllowAutoRedirect = true,
-                MaxAutomaticRedirections = 10,
-                UseProxy = false,
-            };
-            client = new HttpClient(handler);
-            client.Timeout = TimeSpan.FromMinutes(30);
-            client.DefaultRequestHeaders.UserAgent.ParseAdd("Shelly-ALPM/1.0 (compatible)");
-            using var response = client.GetAsync(fullUrl, HttpCompletionOption.ResponseContentRead)
+            using var response = DownloadClient.GetAsync(fullUrl, HttpCompletionOption.ResponseContentRead)
                 .GetAwaiter()
                 .GetResult();
 
@@ -720,7 +739,7 @@ public class AlpmManager(string configPath = "/etc/pacman.conf") : IDisposable, 
         {
             Console.Error.WriteLine($"[Shelly][DEBUG_LOG] Downloading signature {sigUrl}");
 
-            using var response = HttpClient.GetAsync(sigUrl, HttpCompletionOption.ResponseContentRead)
+            using var response = DownloadClient.GetAsync(sigUrl, HttpCompletionOption.ResponseContentRead)
                 .GetAwaiter()
                 .GetResult();
 
@@ -782,25 +801,65 @@ public class AlpmManager(string configPath = "/etc/pacman.conf") : IDisposable, 
         _isPackageDownload = false;
         if (_handle == IntPtr.Zero) Initialize();
         var syncDbsPtr = GetSyncDbs(_handle);
-        if (syncDbsPtr != IntPtr.Zero)
+        if (syncDbsPtr == IntPtr.Zero)
         {
-            // Pass the entire list pointer directly to alpm_db_update
-            var result = Update(_handle, syncDbsPtr, force);
-            if (result < 0)
-            {
-                var error = ErrorNumber(_handle);
-                Console.Error.WriteLine($"Sync failed: {GetErrorMessage(error)}");
-            }
+            Console.WriteLine("No sync databases found");
+            return;
+        }
 
-            if (result > 0)
+        var databaseDownloads = new List<(string dbName, string serverUrl)>();
+        var currentPtr = syncDbsPtr;
+        while (currentPtr != IntPtr.Zero)
+        {
+            var node = Marshal.PtrToStructure<AlpmList>(currentPtr);
+            if (node.Data != IntPtr.Zero)
             {
-                Console.Error.WriteLine($"Sync database up to date");
-            }
+                var dbNamePtr = DbGetName(node.Data);
+                var dbName = Marshal.PtrToStringUTF8(dbNamePtr);
+                if (!string.IsNullOrEmpty(dbName))
+                {
+                    var serverPtrs = DbGetServers(node.Data);
+                    if (serverPtrs != IntPtr.Zero)
+                    {
+                        var serverNode = Marshal.PtrToStructure<AlpmList>(serverPtrs);
+                        if (serverNode.Data == IntPtr.Zero)
+                        {
+                            continue;
+                        }
 
-            if (result == 0)
-            {
-                Console.Error.WriteLine($"Updating Sync database");
+                        var serverUrl = Marshal.PtrToStringUTF8(serverNode.Data);
+                        if (!string.IsNullOrEmpty(serverUrl))
+                        {
+                            databaseDownloads.Add((dbName, serverUrl));
+                        }
+                    }
+                }
+
+                currentPtr = node.Next;
             }
+        }
+
+        var syncDirectory = Path.Combine(_config.DbPath, "sync");
+        // This should always exist, but just in case
+        Directory.CreateDirectory(syncDirectory);
+
+        var downloadTasks = databaseDownloads.Select(db => Task.Run(() =>
+        {
+            var dbFileName = $"{db.dbName}.db";
+            var url = $"{db.serverUrl.TrimEnd('/')}/{dbFileName}";
+            var localPath = Path.Combine(syncDirectory, dbFileName);
+            Console.Error.WriteLine($"[DEBUG_LOG] Downloading {url} to {localPath}");
+            PerformDownload(url, localPath);
+        }));
+
+        Task.WhenAll(downloadTasks).Wait();
+        _preDownloadedFiles = databaseDownloads.SelectMany(d => new[] { d.dbName + ".db", d.dbName + "db.sig" })
+            .ToHashSet();
+        var result = Update(_handle, syncDbsPtr, force);
+        if (result < 0)
+        {
+            var error = ErrorNumber(_handle);
+            Console.Error.WriteLine($"Sync failed: {GetErrorMessage(error)}");
         }
     }
 
