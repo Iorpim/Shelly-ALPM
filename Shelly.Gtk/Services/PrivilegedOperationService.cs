@@ -646,6 +646,10 @@ public class PrivilegedOperationService : IPrivilegedOperationService
         string? conflictQuestion = null;
         var awaitingConflictSelection = false;
 
+        // State for restart check results
+        var restartNeedsReboot = false;
+        var restartFailures = new List<(string Service, string Error)>();
+
         process.OutputDataReceived += (sender, e) =>
         {
             if (e.Data != null)
@@ -891,6 +895,24 @@ public class PrivilegedOperationService : IPrivilegedOperationService
                                 await SafeWriteAsync(args.Response == 1 ? "y" : "n");
                             }
                         }
+                        else if (e.Data.StartsWith("[Shelly][RESTART_REQUIRED]"))
+                        {
+                            var payload = e.Data.Substring("[Shelly][RESTART_REQUIRED]".Length);
+                            if (payload == "reboot")
+                                restartNeedsReboot = true;
+                        }
+                        else if (e.Data.StartsWith("[Shelly][RESTART_FAILED]"))
+                        {
+                            var payload = e.Data.Substring("[Shelly][RESTART_FAILED]".Length);
+                            if (payload.StartsWith("service:"))
+                            {
+                                var rest = payload.Substring("service:".Length);
+                                var parts = rest.Split('|', 2);
+                                var svcName = parts[0];
+                                var svcError = parts.Length > 1 ? parts[1] : "Unknown error";
+                                restartFailures.Add((svcName, svcError));
+                            }
+                        }
                         else if (e.Data.StartsWith("[Shelly][DEBUG]"))
                         {
                             // Debug messages - skip, don't forward to lockout dialog
@@ -974,7 +996,9 @@ public class PrivilegedOperationService : IPrivilegedOperationService
                 Success = success,
                 Output = outputBuilder.ToString(),
                 Error = errorBuilder.ToString(),
-                ExitCode = process.ExitCode
+                ExitCode = process.ExitCode,
+                NeedsReboot = restartNeedsReboot,
+                FailedServiceRestarts = restartFailures
             };
         }
         catch (Exception ex)

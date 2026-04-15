@@ -488,12 +488,39 @@ public class PackageUpdate(
             try
             {
                 lockoutService.Show($"Updating...");
+                OperationResult upgradeResult;
                 if (isFullUpgrade)
-                    await privilegedOperationService.UpgradeSystemAsync();
+                    upgradeResult = await privilegedOperationService.UpgradeSystemAsync();
                 else
-                    await privilegedOperationService.UpdatePackagesAsync(selectedPackages);
+                    upgradeResult = await privilegedOperationService.UpdatePackagesAsync(selectedPackages);
 
                 await LoadDataAsync();
+
+                if (upgradeResult.NeedsReboot)
+                {
+                    var rebootArgs = new GenericQuestionEventArgs(
+                        "Reboot Required",
+                        "A full system reboot is required for updates to take effect.\n\nWould you like to reboot now?",
+                        true
+                    );
+                    genericQuestionService.RaiseQuestion(rebootArgs);
+                    if (await rebootArgs.ResponseTask)
+                    {
+                        System.Diagnostics.Process.Start("systemctl", "reboot");
+                    }
+                }
+                else if (upgradeResult.FailedServiceRestarts.Count > 0)
+                {
+                    var failureList = string.Join("\n", upgradeResult.FailedServiceRestarts
+                        .Select(f => $"  • {f.Service}: {f.Error}"));
+                    var failArgs = new GenericQuestionEventArgs(
+                        "Service Restart Failures",
+                        $"The following services failed to restart automatically:\n{failureList}",
+                        false
+                    );
+                    genericQuestionService.RaiseQuestion(failArgs);
+                    await failArgs.ResponseTask;
+                }
             }
             catch (Exception e)
             {
