@@ -44,4 +44,6 @@ public class OperationResult
     public string Output { get; init; } = string.Empty;
     public string Error { get; init; } = string.Empty;
     public int ExitCode { get; init; }
+    public bool NeedsReboot { get; set; }
+    public List<(string Service, string Error)> FailedServiceRestarts { get; set; } = [];
 }
