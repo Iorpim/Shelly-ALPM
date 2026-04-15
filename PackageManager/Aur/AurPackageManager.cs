@@ -1659,7 +1659,7 @@ public class AurPackageManager(string? configPath = null)
 
     /// <summary>
     /// Checks if a VCS package needs an update by comparing stored commit SHAs
-    /// with remote SHAs via git ls-remote (matching yay/paru behavior).
+    /// with remote SHAs via git ls-remote.
     /// </summary>
     private async Task<bool> CheckVcsPackageNeedsUpdate(string packageName)
     {
@@ -1724,7 +1724,6 @@ public class AurPackageManager(string? configPath = null)
 
     /// <summary>
     /// Runs git ls-remote to get the current commit SHA for a given URL and branch.
-    /// Uses a 15-second timeout matching yay's behavior.
     /// </summary>
     private static async Task<string?> GetRemoteCommitSha(string url, string branch, int timeoutSeconds = 15)
     {
