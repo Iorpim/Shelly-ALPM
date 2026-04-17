@@ -36,13 +36,10 @@ public class HomeWindow(
     private Label? _packagePercentLabel;
     private Label? _totalFlatpakLabel;
     private Label? _flatpakPercentLabel;
-    private Label? _sessionLogTitleLabel;
-    private TextView? _sessionLogTextView;
     private ListBox? _operationLogListBox;
     private Button _archNewsButton = null!;
     private Widget? _activeSessionLogOverlay;
     private Overlay _overlay = null!;
-    private ScrolledWindow? _sessionLogScrolledWindow;
     private uint _updateTimerId;
     private const int MaxRawLineBytes = 50 * 1024 * 1024; // 50 MB
     private GObject.SignalHandler<ListBox, ListBox.RowActivatedSignalArgs>? _logRowActivatedHandler;
