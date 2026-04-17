@@ -361,8 +361,6 @@ public class AppImage(
     {
         try
         {
-            if (_selectedApp == null) return;
-
             lockoutService.Show($"Syncing all AppImages ...");
 
             var result =
