@@ -436,7 +436,6 @@ public class FlatpakManager : IDisposable
     public static string InstallAppFromBundle(string bundlePath, bool isSystem = false)
     {
         IntPtr installationPtr;
-        var installationsPtr = IntPtr.Zero;
 
         if (!isSystem)
         {
@@ -449,29 +448,12 @@ public class FlatpakManager : IDisposable
         }
         else
         {
-            installationsPtr = FlatpakReference.GetSystemInstallations(IntPtr.Zero, out IntPtr error);
+            installationPtr = FlatpakReference.FlatpakInstallationNewSystem(IntPtr.Zero, out IntPtr error);
 
-            if (error != IntPtr.Zero || installationsPtr == IntPtr.Zero)
+            if (error != IntPtr.Zero || installationPtr == IntPtr.Zero)
             {
                 FlatpakReference.GErrorFree(error);
-                FlatpakReference.GPtrArrayUnref(installationsPtr);
-                return "Failed to get system installations.";
-            }
-
-            var dataPtr = Marshal.ReadIntPtr(installationsPtr);
-            var length = Marshal.ReadInt32(installationsPtr + IntPtr.Size);
-
-            if (length == 0)
-            {
-                FlatpakReference.GPtrArrayUnref(installationsPtr);
-                return "No flatpak installations found.";
-            }
-
-            installationPtr = Marshal.ReadIntPtr(dataPtr);
-            if (installationPtr == IntPtr.Zero)
-            {
-                FlatpakReference.GPtrArrayUnref(installationsPtr);
-                return "Installation pointer is invalid.";
+                return "Failed to get system installation.";
             }
         }
 
@@ -566,14 +548,7 @@ public class FlatpakManager : IDisposable
         }
         finally
         {
-            if (isSystem)
-            {
-                FlatpakReference.GObjectUnref(installationPtr);
-            }
-            else if (installationsPtr != IntPtr.Zero)
-            {
-                FlatpakReference.GPtrArrayUnref(installationsPtr);
-            }
+            FlatpakReference.GObjectUnref(installationPtr);
         }
     }
 
@@ -1326,6 +1301,7 @@ public class FlatpakManager : IDisposable
         {
             var actualUrl = remoteUrl;
             var actualGpgVerify = gpgVerify;
+            string? actualGpgKey = null;
 
             if (remoteUrl.EndsWith(".flatpakrepo", StringComparison.OrdinalIgnoreCase))
             {
@@ -1337,8 +1313,9 @@ public class FlatpakManager : IDisposable
 
                 actualUrl = repoConfig.Url;
                 actualGpgVerify = repoConfig.GpgVerify ?? gpgVerify;
+                actualGpgKey = repoConfig.GpgKey;
 
-                Console.Error.WriteLine($"Parsed .flatpakrepo: URL={actualUrl}, GPGVerify={actualGpgVerify}");
+                Console.Error.WriteLine($"Parsed .flatpakrepo: URL={actualUrl}, GPGVerify={actualGpgVerify}, HasGPGKey={!string.IsNullOrEmpty(actualGpgKey)}");
             }
 
             var remotePtr = FlatpakReference.RemoteNew(remoteName);
@@ -1349,6 +1326,17 @@ public class FlatpakManager : IDisposable
 
             FlatpakReference.RemoteSetUrl(remotePtr, actualUrl);
             FlatpakReference.RemoteSetGpgVerify(remotePtr, actualGpgVerify);
+
+            if (!string.IsNullOrEmpty(actualGpgKey))
+            {
+                var decodedKey = Convert.FromBase64String(actualGpgKey);
+                var gBytesPtr = FlatpakReference.GBytesNew(decodedKey, (nuint)decodedKey.Length);
+                if (gBytesPtr != IntPtr.Zero)
+                {
+                    FlatpakReference.RemoteSetGpgKey(remotePtr, gBytesPtr);
+                    FlatpakReference.GBytesUnref(gBytesPtr);
+                }
+            }
 
             try
             {
@@ -2361,7 +2349,15 @@ public class FlatpakManager : IDisposable
                     case "GPGVerify":
                         config.GpgVerify = value.Equals("true", StringComparison.OrdinalIgnoreCase);
                         break;
+                    case "GPGKey":
+                        config.GpgKey = value;
+                        break;
                 }
+            }
+
+            if (!string.IsNullOrEmpty(config.GpgKey) && config.GpgVerify == null)
+            {
+                config.GpgVerify = true;
             }
 
             return config;
@@ -2382,5 +2378,6 @@ public class FlatpakManager : IDisposable
     {
         public string? Url { get; set; }
         public bool? GpgVerify { get; set; }
+        public string? GpgKey { get; set; }
     }
 }

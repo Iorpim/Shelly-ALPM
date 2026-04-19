@@ -206,6 +206,9 @@ internal static partial class FlatpakReference
     [LibraryImport(LibName, EntryPoint = "flatpak_remote_set_gpg_verify", StringMarshalling = StringMarshalling.Utf8)]
     public static partial void RemoteSetGpgVerify(IntPtr remote, [MarshalAs(UnmanagedType.Bool)] bool gpgVerify);
 
+    [LibraryImport(LibName, EntryPoint = "flatpak_remote_set_gpg_key", StringMarshalling = StringMarshalling.Utf8)]
+    public static partial void RemoteSetGpgKey(IntPtr remote, IntPtr gpgKey);
+
     [LibraryImport(LibName, EntryPoint = "flatpak_installation_modify_remote",
         StringMarshalling = StringMarshalling.Utf8)]
     [return: MarshalAs(UnmanagedType.Bool)]

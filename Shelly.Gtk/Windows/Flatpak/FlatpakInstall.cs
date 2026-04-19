@@ -13,6 +13,7 @@ namespace Shelly.Gtk.Windows.Flatpak;
 
 public class FlatpakInstall(
     IUnprivilegedOperationService unprivilegedOperationService,
+    IPrivilegedOperationService privilegedOperationService,
     ILockoutService lockoutService,
     IConfigService configService,
     IGenericQuestionService genericQuestionService,
@@ -830,38 +831,52 @@ public class FlatpakInstall(
                 else
                 {
                     var remotes = await unprivilegedOperationService.FlatpakListRemotes();
-                    var hasSystem = remotes.Any(r => r is { Scope: "system", Name: "flathub" });
-                    
-                    UnprivilegedOperationResult result;
-                    
+                    var hasSystem = remotes.Any(r => r is { Scope: "system" });
+
+
                     //This hoopla is because bundles require resolving their respective deps from the remotes config'd so we must use a flathub that is configured for the right level's.
                     //ex: user level only user trys to install at system level, we must install at user level because that is what their flathub is configured for.
                     if (hasSystem && _selectedRefScope == "system")
                     {
-                        result =
-                            await unprivilegedOperationService.FlatpakInstallFromBundle(file.GetPath()!,
-                                _selectedRefScope);
+                        var privResult =
+                            await privilegedOperationService.FlatpakInstallFromBundle(file.GetPath()!);
+
+                        if (!privResult.Success)
+                        {
+                            var args = new ToastMessageEventArgs(
+                                $"Installing Flatpak failed"
+                            );
+                            genericQuestionService.RaiseToastMessage(args);
+                            Console.WriteLine($"Failed to install local bundle: {privResult.Error}");
+                        }
+                        else
+                        {
+                            var args = new ToastMessageEventArgs(
+                                $"Installed Flatpak"
+                            );
+                            genericQuestionService.RaiseToastMessage(args);
+                        }
                     }
                     else
                     {
-                        result =
-                            await unprivilegedOperationService.FlatpakInstallFromBundle(file.GetPath()!, "user");
-                    }
-                    
-                    if (!result.Success)
-                    {
-                        var args = new ToastMessageEventArgs(
-                            $"Installing Flatpak failed"
-                        );
-                        genericQuestionService.RaiseToastMessage(args);
-                        Console.WriteLine($"Failed to install local bundle: {result.Error}");
-                    }
-                    else
-                    {
-                        var args = new ToastMessageEventArgs(
-                            $"Installed Flatpak"
-                        );
-                        genericQuestionService.RaiseToastMessage(args);
+                        var unprivResult =
+                            await unprivilegedOperationService.FlatpakInstallFromBundle(file.GetPath()!);
+
+                        if (!unprivResult.Success)
+                        {
+                            var args = new ToastMessageEventArgs(
+                                $"Installing Flatpak failed"
+                            );
+                            genericQuestionService.RaiseToastMessage(args);
+                            Console.WriteLine($"Failed to install local bundle: {unprivResult.Error}");
+                        }
+                        else
+                        {
+                            var args = new ToastMessageEventArgs(
+                                $"Installed Flatpak"
+                            );
+                            genericQuestionService.RaiseToastMessage(args);
+                        }
                     }
                 }
             }
