@@ -143,9 +143,16 @@ public class AppImageManager
                 }
             }
 
-            const string iconDir = "/usr/share/icons/hicolor/scalable/apps";
-            if (Directory.Exists(iconDir))
+            string[] iconDirs =
             {
+                "/usr/share/icons/hicolor/scalable/apps",
+                "/usr/share/icons/hicolor/256x256/apps"
+            };
+
+            foreach (var iconDir in iconDirs)
+            {
+                if (!Directory.Exists(iconDir)) continue;
+                
                 var potentialIcons = Directory.GetFiles(iconDir, $"{cleanName}.*");
                 foreach (var icon in potentialIcons)
                 {
@@ -617,11 +624,16 @@ public class AppImageManager
             var finalIconPath = "application-x-executable";
             if (iconPath != null)
             {
-                const string iconDir = "/usr/share/icons/hicolor/scalable/apps";
+                var extension = Path.GetExtension(iconPath).ToLower();
+                if (string.IsNullOrEmpty(extension) || extension == ".diricon")
+                {
+                    extension = ".png";
+                }
+
+                var iconDir = extension == ".svg" ? "/usr/share/icons/hicolor/scalable/apps" : "/usr/share/icons/hicolor/256x256/apps";
+
                 Directory.CreateDirectory(iconDir);
 
-                var extension = Path.GetExtension(iconPath);
-                if (string.IsNullOrEmpty(extension) || extension == ".DirIcon") extension = ".svg";
                 destIconName = $"{CleanInvalidNames(appName).ToLower()}{extension}";
                 var destIconPath = Path.Combine(iconDir, destIconName);
 
