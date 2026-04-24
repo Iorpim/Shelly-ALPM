@@ -32,7 +32,7 @@ makedepends=('dotnet-sdk-10.0' 'clang')
 # Source tarball from GitHub release
 source=("${pkgname}-${pkgver}.tar.gz::https://github.com/ZoeyErinBauer/Shelly-ALPM/archive/v${pkgver}.tar.gz")
 
-sha256sums=('a00b159faa548a37663a552ab24159788cd2201ce7c717218e21567744b6a3a1')
+sha256sums=('48b3419600f50293d13e177ad9e42f9b4ea326469b02fcec6cbf73ee9cbe59f0')
 
 build() {
   cd "$srcdir/Shelly-ALPM-${pkgver}"
@@ -94,6 +94,10 @@ Categories=System;Utility;
 Terminal=false
 NoDisplay=true
 EOF
+
+  # Temporary fix due to missing assets
+  cp ../../Shelly.Gtk/Assets/svg/shelly-updates-symbolic.svg Shelly.Gtk/Assets/svg/shelly-updates-symbolic.svg
+  cp ../../Shelly.Gtk/Assets/svg/shelly-shell-symbolic.svg Shelly.Gtk/Assets/svg/shelly-shell-symbolic.svg
 
   # Install icon
   install -Dm644 Shelly.Gtk/Assets/shellylogo.png "$pkgdir/usr/share/icons/hicolor/256x256/apps/shelly.png"
